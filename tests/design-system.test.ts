@@ -8,6 +8,7 @@ describe("optical monochrome design system", () => {
   it("loads Prompt and defines readable type tokens", () => {
     expect(layout).toContain("Prompt");
     expect(layout).toContain("--font-prompt");
+    expect(css).toContain(".framecraft-app{font-family:var(--font-prompt)");
     expect(css).toContain("--text-description:13px");
     expect(css).toContain("--text-control:14px");
     expect(css).toContain("--text-button:13px");
