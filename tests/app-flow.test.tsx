@@ -86,4 +86,17 @@ describe("FRAME / CRAFT application", () => {
 
     expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
   });
+
+  it("shows the approved Close-Up reference in the card and detail view", async () => {
+    const user = userEvent.setup();
+    render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
+
+    const approvedImage = "/images/techniques/close-up-korean-actor-clean-studio-v3.webp";
+    const card = screen.getByRole("article", { name: /^Close-Up/ });
+    expect(card.querySelector("img")).toHaveAttribute("src", approvedImage);
+
+    await user.click(within(card).getByRole("button", { name: /^Close-Up/ }));
+
+    expect(screen.getByRole("dialog").querySelector("img")).toHaveAttribute("src", approvedImage);
+  });
 });

@@ -10,6 +10,7 @@ import { validateMediaFile, validateVideoReferenceUrl } from "./media-service";
 import { composePrompt } from "./prompt-composer";
 import { PromptPanel } from "./PromptPanel";
 import { categoryLabels, starterTechniques } from "./seed-data";
+import { starterMediaUrls } from "./starter-media";
 import { frameCraftDb, mediaRepository, promptRepository, restoreBackup, settingsRepository, techniqueRepository } from "./storage";
 import type { AppSettings, PromptInput, SavedPrompt, Technique, TechniqueCategory } from "./types";
 import "./framecraft.css";
@@ -64,7 +65,7 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
   const [detail, setDetail] = useState<Technique | null>(null);
   const [notice, setNotice] = useState("");
   const [savedPrompts, setSavedPrompts] = useState<SavedPrompt[]>([]);
-  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>({});
+  const [mediaUrls, setMediaUrls] = useState<Record<string, string>>(() => ({ ...starterMediaUrls }));
   const [settings, setSettings] = useState<AppSettings>(defaultSettings);
   const [importMode, setImportMode] = useState<"merge" | "replace">("merge");
   const [showNew, setShowNew] = useState(false);
@@ -95,7 +96,7 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
           loadedUrls.push(url);
           return [record.techniqueId, url];
         }));
-        setMediaUrls(urls);
+        setMediaUrls({ ...starterMediaUrls, ...urls });
       }
     });
     return () => { active = false; loadedUrls.forEach((url) => URL.revokeObjectURL(url)); };
