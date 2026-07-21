@@ -1,4 +1,5 @@
-import { Check, Copy, RotateCcw, Save, X } from "lucide-react";
+import { Check, RotateCcw, Save, X } from "lucide-react";
+import { CopyButton } from "./CopyButton";
 import { composePrompt, platformPresets } from "./prompt-composer";
 import type { PlatformPresetId, PromptInput, Technique } from "./types";
 
@@ -19,14 +20,10 @@ export function PromptPanel({ input, selected, outputOverride, onInput, onOutput
   const output = outputOverride || generated.prompt;
   const presets = platformPresets.filter((preset) => preset.mode === input.mode);
 
-  async function copyPrompt() {
-    try {
-      await navigator.clipboard.writeText(output);
-    } catch {
-      const textarea = document.querySelector<HTMLTextAreaElement>("#generated-prompt");
-      textarea?.focus();
-      textarea?.select();
-    }
+  function selectGeneratedPrompt() {
+    const textarea = document.querySelector<HTMLTextAreaElement>("#generated-prompt");
+    textarea?.focus();
+    textarea?.select();
   }
 
   return (
@@ -65,7 +62,7 @@ export function PromptPanel({ input, selected, outputOverride, onInput, onOutput
 
       <label className="field output-field"><span>GENERATED PROMPT</span><textarea id="generated-prompt" aria-label="Generated prompt" value={output} onChange={(event) => onOutput(event.target.value)} rows={7} /></label>
       <div className="prompt-actions">
-        <button onClick={copyPrompt}><Copy size={15} /> Copy Prompt</button>
+        <CopyButton value={output} idleLabel="Copy Prompt" copiedLabel="Copied" onError={selectGeneratedPrompt} />
         <button className="primary-button" onClick={onSave}><Save size={15} /> Save</button>
       </div>
       <div className="privacy-note"><Check size={13} /> ข้อมูลและ Prompt อยู่ในอุปกรณ์นี้</div>

@@ -1,6 +1,7 @@
-import { Copy, Heart, Plus } from "lucide-react";
+import { Heart, Plus } from "lucide-react";
 import { categoryLabels } from "./seed-data";
 import type { Technique } from "./types";
+import { CopyButton } from "./CopyButton";
 
 interface TechniqueCardProps {
   technique: Technique;
@@ -41,9 +42,13 @@ export function TechniqueCard({ technique, language, imageUrl, onAdd, onFavorite
           {technique.moods.slice(0, 2).map((mood) => <span key={mood}>{mood}</span>)}
         </div>
         <div className="technique-card__actions">
-          <button onClick={() => navigator.clipboard?.writeText(technique.genericImagePrompt)} aria-label={`คัดลอก Prompt ของ ${technique.titleEn}`}>
-            <Copy size={15} /> Copy
-          </button>
+          <CopyButton
+            value={technique.genericImagePrompt}
+            idleLabel="Copy"
+            copiedLabel="คัดลอกแล้ว"
+            ariaLabel={`คัดลอก Prompt ของ ${technique.titleEn}`}
+            className="copy-button"
+          />
           <button className="add-button" onClick={() => onAdd(technique)} aria-label={`เพิ่ม ${technique.titleEn} เข้า Prompt`}>
             <Plus size={15} /> Add
           </button>
