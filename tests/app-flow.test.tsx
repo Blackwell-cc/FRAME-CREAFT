@@ -87,19 +87,45 @@ describe("FRAME / CRAFT application", () => {
     expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
   });
 
-  it("shows the approved Close-Up reference in the card and detail view", async () => {
+  it("shows a clean approved Close-Up reference in the card and detail view", async () => {
     const user = userEvent.setup();
     render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
 
     const approvedImage = "/images/techniques/close-up-korean-actor-clean-studio-v3.webp";
     const card = screen.getByRole("article", { name: /^Close-Up/ });
-    expect(card.querySelector("img")).toHaveAttribute("src", approvedImage);
-    expect(card.querySelector("img")).toHaveClass("natural-color-reference");
+    const cardImage = card.querySelector("img");
+
+    expect(cardImage).toHaveAttribute("src", approvedImage);
+    expect(cardImage).toHaveClass("natural-color-reference");
+    expect(card.querySelector(".viewfinder-grid")).not.toBeInTheDocument();
+    expect(card.querySelector(".visual-code")).not.toBeInTheDocument();
+    expect(card.querySelector(".visual-index")).not.toBeInTheDocument();
 
     await user.click(within(card).getByRole("button", { name: /^Close-Up/ }));
 
-    const detailImage = screen.getByRole("dialog").querySelector("img");
+    const dialog = screen.getByRole("dialog");
+    const detailImage = dialog.querySelector("img");
     expect(detailImage).toHaveAttribute("src", approvedImage);
     expect(detailImage).toHaveClass("natural-color-reference");
+    expect(dialog.querySelector(".viewfinder-grid")).not.toBeInTheDocument();
+    expect(dialog.querySelector(".detail-visual b")).not.toBeInTheDocument();
+  });
+
+  it("keeps fallback overlays for techniques without reference images", async () => {
+    const user = userEvent.setup();
+    render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
+
+    const card = screen.getByRole("article", { name: /^Extreme Wide Shot/ });
+    expect(card.querySelector("img")).not.toBeInTheDocument();
+    expect(card.querySelector(".viewfinder-grid")).toBeInTheDocument();
+    expect(card.querySelector(".visual-code")).toHaveTextContent("EWS");
+    expect(card.querySelector(".visual-index")).toBeInTheDocument();
+
+    await user.click(within(card).getByRole("button", { name: /^Extreme Wide Shot/ }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.querySelector("img")).not.toBeInTheDocument();
+    expect(dialog.querySelector(".viewfinder-grid")).toBeInTheDocument();
+    expect(dialog.querySelector(".detail-visual b")).toHaveTextContent("EWS");
   });
 });
