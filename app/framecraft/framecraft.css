@@ -71,7 +71,7 @@
 .framecraft-app button:not(.dialog-close){position:relative;overflow:hidden}
 .framecraft-app button,.dialog-close{transition:transform .16s ease,border-color .16s ease,color .16s ease,background-color .16s ease,box-shadow .16s ease,filter .16s ease}
 .framecraft-app button:not(.dialog-close):before{content:"";position:absolute;inset:-80% auto -80% -45%;width:34%;pointer-events:none;background:linear-gradient(90deg,transparent,rgba(255,255,255,.24),transparent);transform:skewX(-22deg) translateX(-240%);transition:transform .42s ease;z-index:0}
-.framecraft-app button:not(.dialog-close)>*{position:relative;z-index:1}
+.framecraft-app button:not(.dialog-close):not(.technique-visual)>*{position:relative;z-index:1}
 .framecraft-app button:hover:not(:disabled){transform:translateY(-1px);border-color:#aeb1b4!important;color:#f7f7f4;box-shadow:0 7px 24px rgba(0,0,0,.4),0 0 18px rgba(255,255,255,.085);filter:brightness(1.12)}
 .framecraft-app button:hover:not(:disabled):before{transform:skewX(-22deg) translateX(520%)}
 .framecraft-app button:active:not(:disabled){transform:translateY(0) scale(.985);filter:brightness(.94);box-shadow:inset 0 2px 8px rgba(0,0,0,.5)}

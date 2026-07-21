@@ -42,4 +42,10 @@ describe("optical monochrome design system", () => {
   it("preserves natural color for approved production references", () => {
     expect(css).toContain(".natural-color-reference{filter:none!important}");
   });
+
+  it("keeps real reference images absolute and outside generic button child positioning", () => {
+    expect(css).toContain(".technique-visual img,.detail-visual img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover");
+    expect(css).toContain(".framecraft-app button:not(.dialog-close):not(.technique-visual)>*");
+    expect(css).not.toContain(".framecraft-app button:not(.dialog-close)>*{position:relative");
+  });
 });
