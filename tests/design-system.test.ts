@@ -38,4 +38,8 @@ describe("optical monochrome design system", () => {
     expect(css).toContain(".utility-head h1{font-family:var(--font-prompt)");
     expect(css).toContain(".settings-grid h2{font-family:var(--font-prompt)");
   });
+
+  it("preserves natural color for approved production references", () => {
+    expect(css).toContain(".natural-color-reference{filter:none!important}");
+  });
 });

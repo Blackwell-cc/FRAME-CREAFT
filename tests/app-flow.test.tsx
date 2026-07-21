@@ -94,9 +94,12 @@ describe("FRAME / CRAFT application", () => {
     const approvedImage = "/images/techniques/close-up-korean-actor-clean-studio-v3.webp";
     const card = screen.getByRole("article", { name: /^Close-Up/ });
     expect(card.querySelector("img")).toHaveAttribute("src", approvedImage);
+    expect(card.querySelector("img")).toHaveClass("natural-color-reference");
 
     await user.click(within(card).getByRole("button", { name: /^Close-Up/ }));
 
-    expect(screen.getByRole("dialog").querySelector("img")).toHaveAttribute("src", approvedImage);
+    const detailImage = screen.getByRole("dialog").querySelector("img");
+    expect(detailImage).toHaveAttribute("src", approvedImage);
+    expect(detailImage).toHaveClass("natural-color-reference");
   });
 });

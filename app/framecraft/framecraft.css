@@ -106,3 +106,5 @@
 .detail-copy h3,.new-dialog h2{font-family:var(--font-prompt),Tahoma,"Noto Sans Thai",Arial,sans-serif}
 
 @media(max-width:760px){.library-toolbar{margin-bottom:10px}.library-summary{margin-bottom:14px}}
+
+.natural-color-reference{filter:none!important}
