@@ -85,3 +85,24 @@
 
 @media(max-width:760px){.framecraft-app{--text-body:15px;--text-description:14px}.hero-copy p{font-size:15px}.chapter-nav{top:0;margin:12px -14px 0;padding:0 14px}.chapter-nav button{flex-basis:128px;min-height:58px}.category-section{scroll-margin-top:72px;padding-top:72px}.category-section__head{grid-template-columns:48px 1fr;gap:14px}.category-section__number{height:38px}.category-section__head h2{font-size:44px}.category-section__head h3{font-size:18px}.category-guide{grid-template-columns:1fr}.rail-links button span{font-size:10px}.technique-card__body>p{min-height:auto}.library-summary{font-size:10px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}.framecraft-app button,.framecraft-app button:before,.technique-card{transition:none!important;animation:none!important}.framecraft-app button:hover:not(:disabled),.framecraft-app button:active:not(:disabled){transform:none}.framecraft-app button:hover:not(:disabled):before{transform:skewX(-22deg) translateX(-240%)}}
+
+/* UI contrast and layout refinement */
+.library-toolbar{margin-bottom:12px}
+.library-summary{margin:0 0 18px;min-height:16px;position:relative;z-index:2}
+
+.framecraft-app select{color-scheme:dark;background-color:#111214;color:#f4f4f1}
+.framecraft-app select option{background:#111214;color:#f4f4f1}
+
+.rail-links button:hover{color:#050505!important}
+.rail-links button.is-active:hover{color:#050505!important}
+.mode-toggle button.is-active:hover{color:#050505!important}
+.new-technique:hover{color:#050505!important}
+.primary-button:hover{color:#050505!important}
+.technique-card__actions .add-button:hover{color:#050505!important}
+.prompt-actions .primary-button:hover{color:#050505!important}
+
+.utility-head h1{font-family:var(--font-prompt),Tahoma,"Noto Sans Thai",Arial,sans-serif;font-weight:600;line-height:1.08;text-transform:none}
+.settings-grid h2{font-family:var(--font-prompt),Tahoma,"Noto Sans Thai",Arial,sans-serif}
+.detail-copy h3,.new-dialog h2{font-family:var(--font-prompt),Tahoma,"Noto Sans Thai",Arial,sans-serif}
+
+@media(max-width:760px){.library-toolbar{margin-bottom:10px}.library-summary{margin-bottom:14px}}

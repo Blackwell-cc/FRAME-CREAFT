@@ -21,4 +21,21 @@ describe("optical monochrome design system", () => {
     expect(css).toContain(".is-copied");
     expect(css).toContain("prefers-reduced-motion:reduce");
   });
+
+  it("separates toolbar summary and styles every native dropdown", () => {
+    expect(css).toContain(".library-toolbar{margin-bottom:12px}");
+    expect(css).toContain(".library-summary{margin:0 0 18px;");
+    expect(css).toContain("color-scheme:dark");
+    expect(css).toContain(".framecraft-app select option");
+    expect(css).toContain("background:#111214");
+    expect(css).toContain("color:#f4f4f1");
+  });
+
+  it("keeps inverse buttons legible and Thai utility headings in Prompt", () => {
+    expect(css).toContain(".rail-links button:hover{color:#050505!important}");
+    expect(css).toContain(".mode-toggle button.is-active:hover{color:#050505!important}");
+    expect(css).toContain(".primary-button:hover{color:#050505!important}");
+    expect(css).toContain(".utility-head h1{font-family:var(--font-prompt)");
+    expect(css).toContain(".settings-grid h2{font-family:var(--font-prompt)");
+  });
 });
