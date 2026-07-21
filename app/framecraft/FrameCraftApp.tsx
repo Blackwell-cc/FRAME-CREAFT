@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Archive, BookOpen, Download, Heart, Languages, Menu, Plus, Search, Settings, Sparkles, Upload, X } from "lucide-react";
+import { Archive, BookOpen, Download, Heart, Languages, Menu, Plus, Search, Settings, Sparkles, Upload, Video, X } from "lucide-react";
 import { createBackupArchive, inspectBackupArchive } from "./backup-service";
 import { categoryOrder } from "./category-guides";
 import { CategorySection } from "./CategorySection";
@@ -318,6 +318,13 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
     setNotice("ลบเทคนิคแล้ว");
   }
 
+  function goHome() {
+    setView("library");
+    setMobileMenu(false);
+    const reducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+    window.scrollTo({ top: 0, behavior: reducedMotion ? "auto" : "smooth" });
+  }
+
   const copy = language === "th" ? {
     eyebrow: "PERSONAL PRODUCTION SYSTEM", titleA: "DIRECT", titleB: "THE FRAME.", subtitle: "คลังภาษาภาพสำหรับกองถ่ายและ AI Generation ที่ค้นหาเร็ว ประกอบ Prompt ได้ และเป็นของคุณเอง",
     search: "ค้นหา Shot, Angle, Lens, Lighting หรือ Mood...", count: "เทคนิคพร้อมใช้", reference: "Production reference ส่วนตัว",
@@ -329,7 +336,7 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
   return (
     <div className="framecraft-app">
       <nav className={`app-rail ${mobileMenu ? "is-open" : ""}`} aria-label="เมนูหลัก">
-        <button className="rail-mark" onClick={() => setView("library")} aria-label="FRAME / CRAFT Home">FC</button>
+        <button className="rail-mark" onClick={goHome} aria-label="FRAME / CRAFT Home"><Video size={22} strokeWidth={1.7} aria-hidden="true" /></button>
         <div className="rail-links">
           {navItems.map(({ id, th, en, icon: Icon }) => <button key={id} className={view === id ? "is-active" : ""} onClick={() => { setView(id); setMobileMenu(false); }} aria-label={th} title={language === "th" ? th : en}><Icon size={19} /><span>{language === "th" ? th : en}</span></button>)}
         </div>

@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { FrameCraftApp } from "../app/framecraft/FrameCraftApp";
 import { starterTechniques } from "../app/framecraft/seed-data";
 
@@ -52,5 +52,38 @@ describe("FRAME / CRAFT application", () => {
 
     await user.click(screen.getByRole("button", { name: "เปลี่ยนภาษาเป็นอังกฤษ" }));
     expect(screen.getByText("Personal production reference")).toBeInTheDocument();
+  });
+
+  it("returns to the library and smoothly scrolls to the top from the camera mark", async () => {
+    const user = userEvent.setup();
+    const scrollTo = vi.fn();
+    Object.defineProperty(window, "scrollTo", { configurable: true, value: scrollTo });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: false }),
+    });
+    render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
+
+    const navigation = screen.getAllByRole("navigation")[0];
+    await user.click(within(navigation).getAllByRole("button")[3]);
+    await user.click(screen.getByRole("button", { name: "FRAME / CRAFT Home" }));
+
+    expect(screen.getByRole("searchbox")).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "smooth" });
+  });
+
+  it("uses instant home scrolling when reduced motion is enabled", async () => {
+    const user = userEvent.setup();
+    const scrollTo = vi.fn();
+    Object.defineProperty(window, "scrollTo", { configurable: true, value: scrollTo });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockReturnValue({ matches: true }),
+    });
+    render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
+
+    await user.click(screen.getByRole("button", { name: "FRAME / CRAFT Home" }));
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
   });
 });
