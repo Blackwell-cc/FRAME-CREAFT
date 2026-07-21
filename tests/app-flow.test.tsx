@@ -5,6 +5,22 @@ import { FrameCraftApp } from "../app/framecraft/FrameCraftApp";
 import { starterTechniques } from "../app/framecraft/seed-data";
 
 describe("FRAME / CRAFT application", () => {
+  it("organizes the library into seven searchable production chapters", async () => {
+    const user = userEvent.setup();
+    render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
+
+    expect(screen.getByRole("region", { name: "01 Shot Sizes" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "02 Camera Angles" })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "07 Camera Settings" })).toBeInTheDocument();
+
+    await user.type(screen.getByRole("searchbox", { name: "ค้นหาคลัง Production" }), "low angle");
+
+    expect(screen.queryByRole("region", { name: "01 Shot Sizes" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "02 Camera Angles" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "01 ระยะภาพ" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "02 มุมกล้อง" })).toBeEnabled();
+  });
+
   it("searches the starter library and adds a technique to the live prompt", async () => {
     const user = userEvent.setup();
     render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);

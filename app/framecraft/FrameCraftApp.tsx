@@ -1,14 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Archive, BookOpen, Download, Heart, Languages, Menu, Plus, Search, Settings, SlidersHorizontal, Sparkles, Upload, X } from "lucide-react";
+import { Archive, BookOpen, Download, Heart, Languages, Menu, Plus, Search, Settings, Sparkles, Upload, X } from "lucide-react";
 import { createBackupArchive, inspectBackupArchive } from "./backup-service";
+import { categoryOrder } from "./category-guides";
+import { CategorySection } from "./CategorySection";
+import { ChapterNav } from "./ChapterNav";
 import { validateMediaFile, validateVideoReferenceUrl } from "./media-service";
 import { composePrompt } from "./prompt-composer";
 import { PromptPanel } from "./PromptPanel";
 import { categoryLabels, starterTechniques } from "./seed-data";
 import { frameCraftDb, mediaRepository, promptRepository, restoreBackup, settingsRepository, techniqueRepository } from "./storage";
-import { TechniqueCard } from "./TechniqueCard";
 import type { AppSettings, PromptInput, SavedPrompt, Technique, TechniqueCategory } from "./types";
 import "./framecraft.css";
 
@@ -55,7 +57,7 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
   const [view, setView] = useState<View>("library");
   const [language, setLanguage] = useState<"th" | "en">("th");
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState<TechniqueCategory | "all">("all");
+  const [activeChapter, setActiveChapter] = useState<TechniqueCategory>("shot-size");
   const [selected, setSelected] = useState<Technique[]>([]);
   const [promptInput, setPromptInput] = useState<PromptInput>(emptyPrompt);
   const [outputOverride, setOutputOverride] = useState("");
@@ -116,11 +118,31 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
   const filtered = useMemo(() => techniques.filter((technique) => {
     if (technique.isHidden) return false;
     if (view === "favorites" && !technique.isFavorite) return false;
-    if (category !== "all" && technique.category !== category) return false;
     const query = search.trim().toLocaleLowerCase("th");
     if (!query) return true;
     return [technique.titleEn, technique.titleTh, technique.abbreviation, technique.descriptionTh, technique.useCasesTh, ...technique.tags, ...technique.moods].filter(Boolean).join(" ").toLocaleLowerCase("th").includes(query);
-  }), [techniques, view, category, search]);
+  }), [techniques, view, search]);
+
+  const grouped = useMemo(() => Object.fromEntries(
+    categoryOrder.map((id) => [id, filtered.filter((item) => item.category === id)]),
+  ) as Record<TechniqueCategory, Technique[]>, [filtered]);
+
+  const chapterCounts = useMemo(() => Object.fromEntries(
+    categoryOrder.map((id) => [id, grouped[id].length]),
+  ) as Record<TechniqueCategory, number>, [grouped]);
+
+  useEffect(() => {
+    const firstVisible = categoryOrder.find((id) => chapterCounts[id] > 0);
+    if (firstVisible && chapterCounts[activeChapter] === 0) setActiveChapter(firstVisible);
+    if (typeof IntersectionObserver === "undefined") return;
+    const sections = document.querySelectorAll<HTMLElement>(".category-section");
+    const observer = new IntersectionObserver((entries) => {
+      const visible = entries.find((entry) => entry.isIntersecting);
+      if (visible) setActiveChapter(visible.target.id.replace("chapter-", "") as TechniqueCategory);
+    }, { rootMargin: "-20% 0px -65% 0px" });
+    sections.forEach((section) => observer.observe(section));
+    return () => observer.disconnect();
+  }, [activeChapter, chapterCounts]);
 
   function addToPrompt(technique: Technique) {
     setSelected((current) => current.some((item) => item.id === technique.id) ? current : [...current, technique]);
@@ -323,10 +345,10 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
             <label className="search-field"><Search size={18} /><input type="search" aria-label="ค้นหาคลัง Production" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.search} /><kbd>⌘ K</kbd></label>
             <button className="new-technique" onClick={() => { setEditing(null); setShowNew(true); }}><Plus size={17} /> เพิ่มมุมภาพ</button>
           </section>
-          <div className="category-tabs" aria-label="กรองหมวดหมู่"><button className={category === "all" ? "is-active" : ""} onClick={() => setCategory("all")}>ALL <span>{techniques.filter((item) => !item.isHidden).length}</span></button>{Object.entries(categoryLabels).map(([id, label]) => <button key={id} className={category === id ? "is-active" : ""} onClick={() => setCategory(id as TechniqueCategory)}>{language === "th" ? label.th : label.en}</button>)}</div>
-          <div className="library-summary"><span>{String(filtered.length).padStart(2, "0")} / {copy.count}</span><SlidersHorizontal size={15} /></div>
+          <div className="library-summary"><span>{String(filtered.length).padStart(2, "0")} / {copy.count}</span><span>07 / PRODUCTION CHAPTERS</span></div>
           {view === "favorites" && savedPrompts.length > 0 && <section className="saved-prompts"><div className="section-label"><span>SAVED PROMPTS / {String(savedPrompts.length).padStart(2, "0")}</span></div>{savedPrompts.map((prompt) => <article key={prompt.id}><span>{prompt.mode.toUpperCase()} · {prompt.platform}</span><h2>{prompt.name}</h2><p>{prompt.editedPrompt}</p><div><button onClick={() => { setPromptInput(prompt.input); setOutputOverride(prompt.editedPrompt); setView("prompt"); }}>เปิดใน Prompt Lab</button><button aria-label={`ลบ ${prompt.name}`} onClick={() => { setSavedPrompts((current) => current.filter((item) => item.id !== prompt.id)); if (persistence === "indexeddb") void promptRepository.delete(prompt.id); }}><X size={14} /></button></div></article>)}</section>}
-          {filtered.length ? <section className="technique-grid">{filtered.map((technique) => <TechniqueCard key={technique.id} technique={technique} language={language} imageUrl={mediaUrls[technique.id]} onAdd={addToPrompt} onFavorite={toggleFavorite} onOpen={setDetail} />)}</section> : <section className="empty-state"><Search size={28} /><h2>ไม่พบเทคนิคที่ค้นหา</h2><p>ลองเปลี่ยนคำค้นหรือเปิดหมวดอื่น</p><button onClick={() => { setSearch(""); setCategory("all"); }}>ล้างตัวกรอง</button></section>}
+          <ChapterNav active={activeChapter} counts={chapterCounts} language={language} />
+          {filtered.length ? <div className="production-chapters">{categoryOrder.map((categoryId, index) => <CategorySection key={categoryId} category={categoryId} index={index} techniques={grouped[categoryId]} language={language} mediaUrls={mediaUrls} onAdd={addToPrompt} onFavorite={toggleFavorite} onOpen={setDetail} />)}</div> : <section className="empty-state"><Search size={28} /><h2>ไม่พบเทคนิคที่ค้นหา</h2><p>ลองเปลี่ยนคำค้นหรือใช้คำที่กว้างขึ้น</p><button onClick={() => setSearch("")}>ล้างคำค้น</button></section>}
         </>}
 
         {view === "manage" && <section className="utility-view">
