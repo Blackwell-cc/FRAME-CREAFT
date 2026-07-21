@@ -1,5 +1,14 @@
 import Dexie, { type EntityTable } from "dexie";
-import type { AppSettings, MediaRecord, SavedPrompt, Technique } from "./types";
+import type {
+  AppSettings,
+  LocalFavoriteRecord,
+  MediaRecord,
+  SavedPrompt,
+  SyncConflictRecord,
+  SyncMetadataRecord,
+  SyncQueueRecord,
+  Technique,
+} from "./types";
 
 interface MetaRecord {
   key: string;
@@ -12,6 +21,10 @@ export class FrameCraftDb extends Dexie {
   media!: EntityTable<MediaRecord, "id">;
   settings!: EntityTable<AppSettings, "id">;
   meta!: EntityTable<MetaRecord, "key">;
+  favorites!: EntityTable<LocalFavoriteRecord, "id">;
+  syncQueue!: EntityTable<SyncQueueRecord, "operationId">;
+  syncConflicts!: EntityTable<SyncConflictRecord, "operationId">;
+  syncMetadata!: EntityTable<SyncMetadataRecord, "key">;
 
   constructor(name = "framecraft") {
     super(name);
@@ -21,6 +34,17 @@ export class FrameCraftDb extends Dexie {
       media: "id, techniqueId, updatedAt",
       settings: "id",
       meta: "key",
+    });
+    this.version(2).stores({
+      techniques: "id, slug, category, sourceType, isHidden, updatedAt, *tags, *moods",
+      prompts: "id, mode, platform, updatedAt",
+      media: "id, techniqueId, updatedAt",
+      settings: "id",
+      meta: "key",
+      favorites: "id, userId, entityType, entityId, createdAt",
+      syncQueue: "operationId, userId, entity, entityId, createdAt",
+      syncConflicts: "operationId, userId, entity, entityId, detectedAt",
+      syncMetadata: "key, updatedAt",
     });
   }
 }
@@ -136,6 +160,63 @@ export function createSettingsRepository(db: FrameCraftDb) {
   };
 }
 
+export function createSyncQueueRepository(db: FrameCraftDb) {
+  return {
+    enqueue(record: SyncQueueRecord) {
+      return db.syncQueue.put(record);
+    },
+    list() {
+      return db.syncQueue.orderBy("createdAt").toArray();
+    },
+    async peek() {
+      return (await db.syncQueue.orderBy("createdAt").first()) ?? null;
+    },
+    remove(operationId: string) {
+      return db.syncQueue.delete(operationId);
+    },
+    count() {
+      return db.syncQueue.count();
+    },
+    async saveTechniqueAndEnqueue(
+      technique: Technique,
+      record: SyncQueueRecord,
+    ) {
+      await db.transaction("rw", db.techniques, db.syncQueue, async () => {
+        await db.techniques.put(technique);
+        await db.syncQueue.put(record);
+      });
+    },
+  };
+}
+
+export function createSyncConflictRepository(db: FrameCraftDb) {
+  return {
+    save(record: SyncConflictRecord) {
+      return db.syncConflicts.put(record);
+    },
+    list() {
+      return db.syncConflicts.orderBy("detectedAt").toArray();
+    },
+    remove(operationId: string) {
+      return db.syncConflicts.delete(operationId);
+    },
+    count() {
+      return db.syncConflicts.count();
+    },
+  };
+}
+
+export function createSyncMetadataRepository(db: FrameCraftDb) {
+  return {
+    get(key: string) {
+      return db.syncMetadata.get(key);
+    },
+    save(record: SyncMetadataRecord) {
+      return db.syncMetadata.put(record);
+    },
+  };
+}
+
 interface RestorePayload {
   techniques: Technique[];
   prompts: SavedPrompt[];
@@ -175,3 +256,6 @@ export const techniqueRepository = createTechniqueRepository(frameCraftDb);
 export const promptRepository = createPromptRepository(frameCraftDb);
 export const mediaRepository = createMediaRepository(frameCraftDb);
 export const settingsRepository = createSettingsRepository(frameCraftDb);
+export const syncQueueRepository = createSyncQueueRepository(frameCraftDb);
+export const syncConflictRepository = createSyncConflictRepository(frameCraftDb);
+export const syncMetadataRepository = createSyncMetadataRepository(frameCraftDb);

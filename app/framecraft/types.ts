@@ -103,3 +103,45 @@ export interface AppSettings {
   defaultPlatform: PlatformPresetId;
   updatedAt: string;
 }
+
+export type SyncEntity =
+  | "technique"
+  | "media"
+  | "saved_prompt"
+  | "favorite"
+  | "user_settings";
+
+export type SyncAction = "upsert" | "delete";
+
+export interface SyncQueueRecord {
+  operationId: string;
+  userId: string;
+  entity: SyncEntity;
+  entityId: string;
+  action: SyncAction;
+  baseVersion: number | null;
+  payload: unknown;
+  attempts: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SyncConflictRecord extends SyncQueueRecord {
+  cloudPayload: unknown;
+  cloudVersion: number;
+  detectedAt: string;
+}
+
+export interface SyncMetadataRecord {
+  key: string;
+  value: unknown;
+  updatedAt: string;
+}
+
+export interface LocalFavoriteRecord {
+  id: string;
+  userId: string;
+  entityType: "technique" | "prompt";
+  entityId: string;
+  createdAt: string;
+}
