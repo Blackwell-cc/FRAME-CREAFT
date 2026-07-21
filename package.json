@@ -16,6 +16,7 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.7",
     "dexie": "^4.4.4",
     "drizzle-orm": "0.45.2",
     "fflate": "^0.8.3",
@@ -43,6 +44,7 @@
     "fake-indexeddb": "^6.2.5",
     "jsdom": "^29.1.1",
     "react-server-dom-webpack": "19.2.6",
+    "supabase": "^2.109.1",
     "tailwindcss": "4.2.1",
     "typescript": "5.9.3",
     "vinext": "0.0.50",
