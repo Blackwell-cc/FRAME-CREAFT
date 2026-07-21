@@ -131,9 +131,11 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
     categoryOrder.map((id) => [id, grouped[id].length]),
   ) as Record<TechniqueCategory, number>, [grouped]);
 
+  const visibleActiveChapter = chapterCounts[activeChapter] > 0
+    ? activeChapter
+    : categoryOrder.find((id) => chapterCounts[id] > 0) || activeChapter;
+
   useEffect(() => {
-    const firstVisible = categoryOrder.find((id) => chapterCounts[id] > 0);
-    if (firstVisible && chapterCounts[activeChapter] === 0) setActiveChapter(firstVisible);
     if (typeof IntersectionObserver === "undefined") return;
     const sections = document.querySelectorAll<HTMLElement>(".category-section");
     const observer = new IntersectionObserver((entries) => {
@@ -142,7 +144,7 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
     }, { rootMargin: "-20% 0px -65% 0px" });
     sections.forEach((section) => observer.observe(section));
     return () => observer.disconnect();
-  }, [activeChapter, chapterCounts]);
+  }, [chapterCounts]);
 
   function addToPrompt(technique: Technique) {
     setSelected((current) => current.some((item) => item.id === technique.id) ? current : [...current, technique]);
@@ -347,7 +349,7 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
           </section>
           <div className="library-summary"><span>{String(filtered.length).padStart(2, "0")} / {copy.count}</span><span>07 / PRODUCTION CHAPTERS</span></div>
           {view === "favorites" && savedPrompts.length > 0 && <section className="saved-prompts"><div className="section-label"><span>SAVED PROMPTS / {String(savedPrompts.length).padStart(2, "0")}</span></div>{savedPrompts.map((prompt) => <article key={prompt.id}><span>{prompt.mode.toUpperCase()} · {prompt.platform}</span><h2>{prompt.name}</h2><p>{prompt.editedPrompt}</p><div><button onClick={() => { setPromptInput(prompt.input); setOutputOverride(prompt.editedPrompt); setView("prompt"); }}>เปิดใน Prompt Lab</button><button aria-label={`ลบ ${prompt.name}`} onClick={() => { setSavedPrompts((current) => current.filter((item) => item.id !== prompt.id)); if (persistence === "indexeddb") void promptRepository.delete(prompt.id); }}><X size={14} /></button></div></article>)}</section>}
-          <ChapterNav active={activeChapter} counts={chapterCounts} language={language} />
+          <ChapterNav active={visibleActiveChapter} counts={chapterCounts} language={language} />
           {filtered.length ? <div className="production-chapters">{categoryOrder.map((categoryId, index) => <CategorySection key={categoryId} category={categoryId} index={index} techniques={grouped[categoryId]} language={language} mediaUrls={mediaUrls} onAdd={addToPrompt} onFavorite={toggleFavorite} onOpen={setDetail} />)}</div> : <section className="empty-state"><Search size={28} /><h2>ไม่พบเทคนิคที่ค้นหา</h2><p>ลองเปลี่ยนคำค้นหรือใช้คำที่กว้างขึ้น</p><button onClick={() => setSearch("")}>ล้างคำค้น</button></section>}
         </>}
 
