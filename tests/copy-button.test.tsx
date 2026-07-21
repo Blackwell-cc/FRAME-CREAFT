@@ -17,8 +17,28 @@ describe("CopyButton", () => {
     expect(screen.getByRole("button", { name: "Copied" })).toHaveClass("is-copied");
   });
 
-  it("reports failure without showing copied feedback", async () => {
+  it("falls back to a temporary selection when clipboard access is denied", async () => {
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: vi.fn().mockReturnValue(true),
+    });
+    Object.assign(navigator, {
+      clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
+    });
+    render(<CopyButton value="camera prompt" idleLabel="Copy" copiedLabel="Copied" />);
+
+    await userEvent.click(screen.getByRole("button", { name: "Copy" }));
+
+    expect(document.execCommand).toHaveBeenCalledWith("copy");
+    expect(screen.getByRole("button", { name: "Copied" })).toHaveClass("is-copied");
+  });
+
+  it("reports failure without showing copied feedback when both methods fail", async () => {
     const onError = vi.fn();
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
+    });
     Object.assign(navigator, {
       clipboard: { writeText: vi.fn().mockRejectedValue(new Error("denied")) },
     });

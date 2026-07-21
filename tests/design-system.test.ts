@@ -15,6 +15,7 @@ describe("optical monochrome design system", () => {
 
   it("defines optical and interactive states", () => {
     expect(css).toContain(".chapter-nav");
+    expect(css).toContain(".app-main{overflow:visible}");
     expect(css).toContain(":hover");
     expect(css).toContain(".is-copied");
     expect(css).toContain("prefers-reduced-motion:reduce");

@@ -23,6 +23,7 @@
 
 /* Optical Monochrome refinement */
 .framecraft-app{font-size:var(--text-body);background:radial-gradient(ellipse at 18% 3%,rgba(255,255,255,.105) 0,rgba(255,255,255,.025) 18%,transparent 36%),radial-gradient(ellipse at 76% 42%,rgba(255,255,255,.055) 0,transparent 26%),linear-gradient(132deg,#030303 0%,#0b0b0c 42%,#050506 66%,#151619 100%);background-attachment:fixed}
+.app-main{overflow:visible}
 .app-main{background:radial-gradient(ellipse at 42% 0,rgba(255,255,255,.055),transparent 25%),linear-gradient(112deg,rgba(255,255,255,.018),transparent 42%);position:relative}
 .app-main:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(118deg,transparent 0 31%,rgba(255,255,255,.025) 36%,transparent 42%);mix-blend-mode:screen}
 .app-main>*{position:relative}
