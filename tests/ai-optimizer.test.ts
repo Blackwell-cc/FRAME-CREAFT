@@ -27,9 +27,9 @@ const request: AiOptimizeRequest = {
   selected: [],
   composition: {
     prompt: "Close-up of a director.",
+    negativePrompt: "",
     warnings: [],
     shots: [],
-    completeness: { subject: true, action: true, environment: true },
   },
   platform: "generic-image",
   outputLanguage: "en",
