@@ -1,0 +1,182 @@
+import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { describe, expect, it, vi } from "vitest";
+import { OwnerAuthPanel } from "../app/framecraft/OwnerAuthPanel";
+import { SyncStatus } from "../app/framecraft/SyncStatus";
+import { FrameCraftApp } from "../app/framecraft/FrameCraftApp";
+import { starterTechniques } from "../app/framecraft/seed-data";
+import type { AuthRepository, OwnerSession } from "../app/framecraft/cloud/contracts";
+import type { AiOptimizeResult } from "../app/framecraft/ai-optimizer";
+
+const aiResultFixture: AiOptimizeResult = {
+  optimizedPrompt: "A refined cinematic close-up of a director reviewing a monitor.",
+  improvements: ["Clarified the subject and action."],
+  warnings: [],
+  shotBreakdown: [],
+  model: "gemini-test",
+  optimizedAt: "2026-07-22T00:00:00.000Z",
+};
+
+function aiRuntime(analyze: ReturnType<typeof vi.fn>) {
+  return {
+    ai: { analyze },
+    migration: vi.fn().mockReturnValue(null),
+    loadOwner: vi.fn().mockResolvedValue({ prompts: [], favorites: [], settings: null }),
+  } as never;
+}
+
+function createRepository(session: OwnerSession): AuthRepository {
+  return {
+    getSession: vi.fn().mockResolvedValue(session),
+    signIn: vi.fn().mockResolvedValue(session),
+    sendPasswordReset: vi.fn().mockResolvedValue(undefined),
+    linkGoogle: vi.fn().mockResolvedValue(undefined),
+    signOut: vi.fn().mockResolvedValue(undefined),
+    subscribe: vi.fn().mockReturnValue(() => undefined),
+  };
+}
+
+describe("owner auth panel", () => {
+  it("validates the Thai login form and has no public sign-up action", async () => {
+    const user = userEvent.setup();
+    render(
+      <OwnerAuthPanel
+        repository={createRepository({ state: "signed-out" })}
+        initialSession={{ state: "signed-out" }}
+        origin="https://frame.test"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "เข้าสู่ระบบ" }));
+
+    expect(screen.getByText("กรุณากรอกอีเมลและรหัสผ่าน")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /สมัคร/ })).not.toBeInTheDocument();
+  });
+
+  it("lets the owner link Google and sign out", async () => {
+    const user = userEvent.setup();
+    const session: OwnerSession = {
+      state: "owner",
+      userId: "owner-id",
+      email: "owner@example.com",
+    };
+    const repository = createRepository(session);
+    render(
+      <OwnerAuthPanel
+        repository={repository}
+        initialSession={session}
+        origin="https://frame.test"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "เชื่อม Google" }));
+    await user.click(screen.getByRole("button", { name: "ออกจากระบบ" }));
+
+    expect(repository.linkGoogle).toHaveBeenCalledWith("https://frame.test");
+    expect(repository.signOut).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a signed-in non-owner in viewer mode", () => {
+    const session: OwnerSession = {
+      state: "viewer",
+      userId: "viewer-id",
+      email: "viewer@example.com",
+    };
+    render(
+      <OwnerAuthPanel
+        repository={createRepository(session)}
+        initialSession={session}
+        origin="https://frame.test"
+      />,
+    );
+
+    expect(screen.getByText("บัญชีนี้ไม่มีสิทธิ์จัดการ Library")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "เชื่อม Google" })).not.toBeInTheDocument();
+  });
+});
+
+describe("sync status", () => {
+  it.each([
+    ["connected", "Cloud Connected"],
+    ["syncing", "Syncing"],
+    ["offline", "Offline — waiting to sync"],
+    ["needs-review", "Needs review"],
+  ] as const)("renders %s state", (state, label) => {
+    render(
+      <SyncStatus
+        snapshot={{
+          state,
+          pendingCount: 2,
+          conflictCount: state === "needs-review" ? 1 : 0,
+          lastSyncedAt: "2026-07-22T00:00:00.000Z",
+        }}
+      />,
+    );
+
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.getByText("รอซิงก์ 2 รายการ")).toBeInTheDocument();
+  });
+});
+
+describe("owner-managed application controls", () => {
+  it("hides AI controls from anonymous users", () => {
+    render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
+    expect(screen.queryByRole("button", { name: "วิเคราะห์ด้วย AI" })).not.toBeInTheDocument();
+  });
+
+  it("previews without overwriting and applies only after confirmation", async () => {
+    const user = userEvent.setup();
+    const analyze = vi.fn().mockResolvedValue(aiResultFixture);
+    render(
+      <FrameCraftApp
+        initialTechniques={starterTechniques}
+        persistence="memory"
+        initialOwnerSession={{ state: "owner", userId: "owner-id", email: "owner@example.com" }}
+        cloudRuntime={aiRuntime(analyze)}
+      />,
+    );
+    const output = screen.getByLabelText("Generated prompt");
+    const original = (output as HTMLTextAreaElement).value;
+
+    await user.click(screen.getByRole("button", { name: "วิเคราะห์ด้วย AI" }));
+    expect(await screen.findByRole("dialog", { name: "AI Prompt Preview" }))
+      .toHaveTextContent(aiResultFixture.optimizedPrompt);
+    expect(output).toHaveValue(original);
+
+    await user.click(screen.getByRole("button", { name: "ใช้ผลลัพธ์นี้" }));
+    expect(output).toHaveValue(aiResultFixture.optimizedPrompt);
+    expect(screen.getByText("AI Applied")).toBeInTheDocument();
+  });
+
+  it("keeps the local prompt byte-for-byte when AI fails", async () => {
+    const user = userEvent.setup();
+    render(
+      <FrameCraftApp
+        initialTechniques={starterTechniques}
+        persistence="memory"
+        initialOwnerSession={{ state: "owner", userId: "owner-id", email: "owner@example.com" }}
+        cloudRuntime={aiRuntime(vi.fn().mockRejectedValue({ code: "rate-limit" }))}
+      />,
+    );
+    const output = screen.getByLabelText("Generated prompt");
+    await user.type(output, "local draft");
+
+    await user.click(screen.getByRole("button", { name: "วิเคราะห์ด้วย AI" }));
+
+    expect(output).toHaveValue("local draft");
+    expect(await screen.findByRole("alert")).toHaveTextContent("ใช้งานครบโควตาชั่วคราว");
+  });
+
+  it("reveals management controls only in an owner session", () => {
+    render(
+      <FrameCraftApp
+        initialTechniques={starterTechniques}
+        persistence="memory"
+        initialOwnerSession={{ state: "owner", userId: "owner-id", email: "owner@example.com" }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "จัดการคลัง" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /เพิ่มมุมภาพ/ })).toBeInTheDocument();
+  });
+});

@@ -1,2 +1,23 @@
+# dependencies
+/node_modules/
+
+# generated output
+/.next/
+/.vinext/
+/dist/
+/coverage/
+/.wrangler/
+/outputs/
+/work/
+
+# local environment
+.env*
+!.env.example
+*.log
+.DS_Store
+next-env.d.ts
+*.tsbuildinfo
+
+# local planning and worktrees
 .superpowers/
 .worktrees/
