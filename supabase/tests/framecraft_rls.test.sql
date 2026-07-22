@@ -1,6 +1,6 @@
 begin;
 
-select plan(15);
+select plan(16);
 
 select has_table('public', 'techniques');
 select has_table('public', 'media');
@@ -19,6 +19,11 @@ select is(
   (select public.is_framecraft_owner()),
   false,
   'anonymous is not owner'
+);
+select is(
+  (select public.is_framecraft_owner()),
+  false,
+  'anonymous remains non-owner for edge function authorization'
 );
 select ok(
   (select rowsecurity from pg_tables where schemaname = 'public' and tablename = 'techniques'),

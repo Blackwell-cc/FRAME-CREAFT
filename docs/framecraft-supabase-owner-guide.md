@@ -186,6 +186,95 @@ Free Plan ไม่มี Automatic Backup แบบรายวัน จึง
 - [ ] Mobile และ Desktop ใช้งานได้
 - [ ] ได้รับอนุมัติจากเจ้าของก่อน Deploy Public
 
+## 16. เปิดใช้ Owner AI Prompt Optimizer
+
+AI Optimizer เป็นฟังก์ชันเสริมแบบกดใช้งานเอง ระบบ Prompt ปกติยังทำงานฟรีโดยไม่เรียก AI เสมอ เมื่อ AI มีปัญหา Prompt ที่อยู่ในช่อง `GENERATED PROMPT` จะไม่ถูกลบหรือเขียนทับ
+
+### 16.1 สร้าง Gemini API Key ด้วยบัญชีของเจ้าของ
+
+1. เปิด [Google AI Studio](https://aistudio.google.com/apikey) ด้วยบัญชี Google ของเจ้าของเว็บไซต์
+2. กดสร้าง API Key สำหรับโปรเจกต์ที่เจ้าของควบคุมเอง
+3. คัดลอก Key ไปใส่ใน Supabase Secrets ตามขั้นตอนถัดไป
+4. ห้ามส่ง Key ในแชต, Screenshot, Git, `.env.local` ของหน้าเว็บ หรือไฟล์ที่อัปโหลดสาธารณะ
+5. หากสงสัยว่า Key รั่ว ให้ยกเลิก Key เดิมและสร้างใหม่ทันที
+
+โมเดลเริ่มต้นที่ตรวจสอบจากเอกสารทางการ ณ วันที่ 22 กรกฎาคม 2026 คือ `gemini-3.5-flash-lite` ซึ่งเป็นรุ่น GA ที่เน้นความเร็วและต้นทุนต่ำ แต่ชื่อโมเดล โควตา และ Free Tier เปลี่ยนได้ ควรตรวจ [Gemini Models](https://ai.google.dev/gemini-api/docs/models) และ [Gemini Pricing](https://ai.google.dev/gemini-api/docs/pricing) ก่อนตั้งค่าจริงทุกครั้ง
+
+### 16.2 ตั้งค่า Secrets ใน Supabase Dashboard
+
+1. เปิด Supabase Dashboard ของ `Website Camera Guide Project`
+2. ไปที่ `Edge Functions > Secrets`
+3. เพิ่มค่าต่อไปนี้ทีละรายการ:
+
+```text
+GEMINI_API_KEY=<วาง API Key ใน Dashboard เท่านั้น>
+GEMINI_MODEL=gemini-3.5-flash-lite
+FRAMECRAFT_ALLOWED_ORIGINS=https://framecraft-production-guide.blackweii.chatgpt.site
+FRAMECRAFT_ENV=production
+```
+
+4. ตรวจว่า `FRAMECRAFT_ALLOWED_ORIGINS` ตรงกับ Origin ของเว็บไซต์จริง ไม่มี `/` ต่อท้าย และคั่นหลายโดเมนด้วย comma
+5. ค่า `SUPABASE_URL` และ `SUPABASE_ANON_KEY` เป็น Secret มาตรฐานที่ Supabase Hosted Edge Functions เตรียมไว้แล้ว จึงไม่ต้องคัดลอกจากแชตหรือฝังเพิ่มในโค้ด
+6. ห้ามใส่ `GEMINI_API_KEY` ใน `.env.local` ของเว็บไซต์ เพราะไฟล์นั้นมีไว้สำหรับค่าฝั่ง Browser ไม่ใช่ Secret ของ Edge Function
+
+Supabase รองรับการตั้ง Production Secrets ผ่าน Dashboard หรือ CLI และค่าจะพร้อมใช้ใน Function โดยไม่ต้อง Deploy ซ้ำ ดูรายละเอียดที่ [Supabase Edge Function Secrets](https://supabase.com/docs/guides/functions/secrets)
+
+### 16.3 Deploy Edge Function
+
+เปิด Terminal ในโฟลเดอร์โปรเจกต์ แล้วทำตามลำดับนี้:
+
+```powershell
+npx supabase login
+npx supabase link --project-ref <PROJECT_REF>
+npx supabase functions deploy analyze-prompt
+```
+
+ผลที่ควรได้คือ Function ชื่อ `analyze-prompt` แสดงสถานะ Active ใน Supabase Dashboard ห้ามใช้ตัวเลือก `--no-verify-jwt` เพราะ Function นี้ต้องรับ Session JWT ของ Owner และตรวจ `is_framecraft_owner()` ซ้ำก่อนเรียก Gemini
+
+### 16.4 ทดสอบความปลอดภัยก่อนใช้งาน
+
+1. เปิดเว็บไซต์แบบยังไม่ Login: ต้องไม่เห็นปุ่ม `วิเคราะห์ด้วย AI`
+2. ส่งคำขอแบบไม่มี Authorization ไปยัง Function: ต้องได้ HTTP `401`
+3. Login ด้วยบัญชี Viewer: ต้องไม่เห็นปุ่ม AI และ Function ต้องตอบ `403` หากถูกเรียกโดยตรง
+4. Login Owner: ต้องเห็นปุ่ม `วิเคราะห์ด้วย AI`
+5. กดวิเคราะห์: ต้องเห็นหน้าต่าง Preview โดย Prompt เดิมยังเหมือนเดิม
+6. กด `ยกเลิก`: Prompt เดิมต้องไม่เปลี่ยน
+7. วิเคราะห์ใหม่แล้วกด `ใช้ผลลัพธ์นี้`: จึงเปลี่ยน Prompt และแสดงสถานะ `AI Applied`
+8. หลัง Apply ลองเพิ่มการ์ด แล้วกดยกเลิกในกล่องยืนยัน: AI Prompt ต้องยังอยู่
+9. Logout: ปุ่ม AI ต้องหาย
+
+### 16.5 ค่าใช้จ่ายและความเป็นส่วนตัว
+
+- ระบบ Composer ปกติไม่เรียก AI และไม่มีค่า Token
+- AI จะถูกเรียกเฉพาะเมื่อ Owner กด `วิเคราะห์ด้วย AI`
+- Google มี Free Tier สำหรับบางโมเดลและมี Rate Limit; สิทธิ์จริงขึ้นกับบัญชี ภูมิภาค และนโยบายปัจจุบัน
+- ระบบนี้ไม่เปิด Billing หรือ Paid Tier ให้อัตโนมัติ หากยังไม่ผูก Billing จะไม่มีการเปลี่ยนเป็นแบบเสียเงินเองจากโค้ดนี้
+- Free Tier อาจมีเงื่อนไขการใช้ข้อมูลเพื่อปรับปรุงบริการตามนโยบาย Google ปัจจุบัน จึงไม่ควรส่งข้อมูลลับ ข้อมูลลูกค้าที่ระบุตัวบุคคลได้ หรือข้อมูลภายในที่ไม่ได้รับอนุญาต
+- Browser ส่งเฉพาะข้อมูล Prompt ที่จำเป็น การ์ดที่เลือก ลำดับช็อต แพลตฟอร์ม และภาษา ไม่ส่งรูปภาพ รหัสผ่าน Database หรือ Secret
+
+### 16.6 วิธีปิด AI ชั่วคราว
+
+ลบหรือเปลี่ยน `GEMINI_API_KEY` ใน Supabase Secrets แล้ว Function จะตอบ `503` โดย Prompt Composer ปกติยังใช้งานต่อได้ หากต้องการปิดปุ่มทั้งหมดในหน้าเว็บ ให้ถอดการเชื่อม AI Runtime ในเวอร์ชันถัดไปแล้ว Deploy ใหม่
+
+### 16.7 แก้ปัญหาตามรหัส
+
+- `401 unauthorized` — Session หมดอายุ ให้ Logout แล้ว Login Owner ใหม่
+- `403 forbidden` — User ID ไม่อยู่ใน `owner_profiles` หรือ Origin ไม่ตรงกับ `FRAMECRAFT_ALLOWED_ORIGINS`
+- `429 rate-limit` — ใช้ครบโควตาชั่วคราว ให้รอแล้วลองใหม่ โดยไม่ต้องกดซ้ำต่อเนื่อง
+- `503 unavailable` — ตรวจ `GEMINI_API_KEY`, `GEMINI_MODEL`, สถานะ Supabase และ Function Logs โดยห้ามคัดลอก Secret มาใส่ในแชต
+- `504 timeout` — Gemini ตอบเกิน 20 วินาที Prompt เดิมยังปลอดภัย ให้ลองใหม่ภายหลัง
+- `invalid-response` — AI ส่งข้อมูลไม่ตรง Schema ระบบจึงทิ้งผลดิบและไม่เขียนทับ Prompt
+
+### 16.8 Checklist ก่อนอนุมัติ Deploy Public
+
+- [ ] Secret อยู่เฉพาะ Supabase Edge Function
+- [ ] Anonymous และ Viewer ใช้ AI ไม่ได้
+- [ ] Owner เห็น Preview และต้องกด Apply เอง
+- [ ] Cancel, Error, Rate Limit และ Timeout ไม่เปลี่ยน Prompt เดิม
+- [ ] Image และ Video สร้าง Prompt ปกติได้แม้ AI ถูกปิด
+- [ ] ตรวจ Usage/Rate Limit จาก Dashboard แล้ว
+- [ ] เจ้าของตรวจ Preview บนเว็บไซต์ทดสอบและอนุมัติก่อน Deploy Public
+
 ## เอกสารอ้างอิงทางการ
 
 - Supabase Project Pausing: https://supabase.com/docs/guides/platform/free-project-pausing
