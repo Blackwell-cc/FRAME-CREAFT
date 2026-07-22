@@ -8,6 +8,8 @@ export type TechniqueCategory =
   | "camera-settings";
 
 export type PromptMode = "image" | "video";
+export type OutputLanguage = "th" | "en";
+export type PromptState = "auto" | "manual" | "stale" | "ai-preview" | "ai-applied";
 export type PlatformPresetId =
   | "generic-image"
   | "midjourney"
