@@ -2,7 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import {
   createAnalyzePromptHandler,
   createProductionDependencies,
-} from "./handler";
+} from "./handler.ts";
 
 interface DenoRuntime {
   env: { get(name: string): string | undefined };

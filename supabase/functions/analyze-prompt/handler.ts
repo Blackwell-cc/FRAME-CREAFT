@@ -4,7 +4,7 @@ import {
   edgeAiOptimizeResultSchema,
   type EdgeAiModelResult,
   type EdgeAiOptimizeRequest,
-} from "./contracts";
+} from "./contracts.ts";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 const MAX_REQUEST_BYTES = 32_768;
