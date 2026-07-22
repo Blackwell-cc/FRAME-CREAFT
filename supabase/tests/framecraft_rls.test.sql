@@ -1,14 +1,17 @@
 begin;
 
+create extension if not exists pgtap with schema extensions;
+set local search_path = extensions, public;
+
 select plan(16);
 
-select has_table('public', 'techniques');
-select has_table('public', 'media');
-select has_table('public', 'saved_prompts');
-select has_table('public', 'favorites');
-select has_table('public', 'user_settings');
-select has_table('public', 'owner_profiles');
-select has_table('public', 'sync_receipts');
+select has_table('public', 'techniques', 'techniques table exists');
+select has_table('public', 'media', 'media table exists');
+select has_table('public', 'saved_prompts', 'saved prompts table exists');
+select has_table('public', 'favorites', 'favorites table exists');
+select has_table('public', 'user_settings', 'user settings table exists');
+select has_table('public', 'owner_profiles', 'owner profiles table exists');
+select has_table('public', 'sync_receipts', 'sync receipts table exists');
 select has_function('public', 'is_framecraft_owner', array[]::text[]);
 select has_function(
   'public',
