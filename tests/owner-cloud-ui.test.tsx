@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { OwnerAuthPanel } from "../app/framecraft/OwnerAuthPanel";
+import { SyncStatus } from "../app/framecraft/SyncStatus";
 import type { AuthRepository, OwnerSession } from "../app/framecraft/cloud/contracts";
 
 function createRepository(session: OwnerSession): AuthRepository {
@@ -71,5 +72,28 @@ describe("owner auth panel", () => {
 
     expect(screen.getByText("บัญชีนี้ไม่มีสิทธิ์จัดการ Library")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "เชื่อม Google" })).not.toBeInTheDocument();
+  });
+});
+
+describe("sync status", () => {
+  it.each([
+    ["connected", "Cloud Connected"],
+    ["syncing", "Syncing"],
+    ["offline", "Offline — waiting to sync"],
+    ["needs-review", "Needs review"],
+  ] as const)("renders %s state", (state, label) => {
+    render(
+      <SyncStatus
+        snapshot={{
+          state,
+          pendingCount: 2,
+          conflictCount: state === "needs-review" ? 1 : 0,
+          lastSyncedAt: "2026-07-22T00:00:00.000Z",
+        }}
+      />,
+    );
+
+    expect(screen.getByText(label)).toBeInTheDocument();
+    expect(screen.getByText("รอซิงก์ 2 รายการ")).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 begin;
 
-select plan(14);
+select plan(15);
 
 select has_table('public', 'techniques');
 select has_table('public', 'media');
@@ -10,6 +10,11 @@ select has_table('public', 'user_settings');
 select has_table('public', 'owner_profiles');
 select has_table('public', 'sync_receipts');
 select has_function('public', 'is_framecraft_owner', array[]::text[]);
+select has_function(
+  'public',
+  'apply_framecraft_operation',
+  array['uuid', 'text', 'text', 'text', 'integer', 'jsonb']
+);
 select is(
   (select public.is_framecraft_owner()),
   false,

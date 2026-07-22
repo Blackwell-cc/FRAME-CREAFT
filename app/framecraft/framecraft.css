@@ -119,3 +119,13 @@
 .owner-auth button{background:#f3f3f0;color:#090909;cursor:pointer;padding:10px 16px;transition:transform 160ms ease,box-shadow 160ms ease}
 .owner-auth button:hover:not(:disabled){transform:translateY(-2px);box-shadow:0 0 22px rgb(255 255 255 / 20%)}
 .owner-auth__actions{display:flex;flex-wrap:wrap;gap:10px}
+
+.sync-status{display:flex;align-items:flex-start;gap:10px;border:1px solid #353535;background:#0b0b0b;padding:12px 14px;color:#d7d7d4}
+.sync-status__signal{width:8px;height:8px;margin-top:6px;border-radius:50%;background:#8c8c8c;box-shadow:0 0 10px rgb(255 255 255 / 20%)}
+.sync-status--connected .sync-status__signal{background:#e8e8e5}
+.sync-status--syncing .sync-status__signal{background:#fff;animation:sync-status-pulse 1s ease-in-out infinite}
+.sync-status--offline .sync-status__signal{background:#606060}
+.sync-status--needs-review .sync-status__signal{background:#bdbdbd;box-shadow:0 0 0 3px #333}
+.sync-status strong{font-size:.85rem;letter-spacing:.04em}
+.sync-status p,.sync-status time{display:block;margin:3px 0 0;color:#8f8f8c;font-size:.75rem}
+@keyframes sync-status-pulse{50%{opacity:.35;transform:scale(.75)}}
