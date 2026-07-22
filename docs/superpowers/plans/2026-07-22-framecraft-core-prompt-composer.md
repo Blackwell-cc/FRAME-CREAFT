@@ -248,7 +248,7 @@ Expected: PASS ทุกกรณี Image, Video, th/en, Duration และ Pla
 - [ ] **Step 5: Commit**
 
 ```powershell
-git add app/framecraft/types.ts app/framecraft/prompt-composer.ts tests/prompt-composer.test.ts
+git add app/framecraft/types.ts app/framecraft/prompt-composer.ts app/framecraft/FrameCraftApp.tsx app/framecraft/PromptPanel.tsx tests/prompt-composer.test.ts
 git commit -m "feat: compose structured image and video prompts"
 ```
 
@@ -346,15 +346,28 @@ it("keeps an empty manual prompt and marks it stale after field changes", async 
 });
 
 it("blocks a second image shot size and explains why", async () => {
-  // เพิ่ม Close-Up แล้วเพิ่ม Extreme Close-Up
+  const user = userEvent.setup();
+  render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
+  const closeUp = screen.getByRole("article", { name: "Close-Up / ภาพใกล้" });
+  const extremeCloseUp = screen.getByRole("article", { name: "Extreme Close-Up / ภาพใกล้มาก" });
+  await user.click(within(closeUp).getByRole("button", { name: "เพิ่ม Close-Up เข้า Prompt" }));
+  await user.click(within(extremeCloseUp).getByRole("button", { name: "เพิ่ม Extreme Close-Up เข้า Prompt" }));
   expect(screen.getByRole("alert")).toHaveTextContent("เลือกได้เพียง 1 รายการ");
   expect(screen.getByText("Close-Up")).toBeInTheDocument();
 });
 
 it("cancels a card mutation when a manual prompt would be replaced", async () => {
+  const user = userEvent.setup();
   vi.spyOn(window, "confirm").mockReturnValue(false);
-  // แก้ textarea แล้วกด Add
-  expect(screen.queryByText(/SELECTED \/ 01/)).not.toBeInTheDocument();
+  render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
+  const closeUp = screen.getByRole("article", { name: "Close-Up / ภาพใกล้" });
+  const lowAngle = screen.getByRole("article", { name: "Low Angle / มุมเสย" });
+  await user.click(within(closeUp).getByRole("button", { name: "เพิ่ม Close-Up เข้า Prompt" }));
+  await user.clear(screen.getByLabelText("Generated prompt"));
+  await user.type(screen.getByLabelText("Generated prompt"), "my manual prompt");
+  await user.click(within(lowAngle).getByRole("button", { name: "เพิ่ม Low Angle เข้า Prompt" }));
+  expect(screen.getByText("SELECTED / 01")).toBeInTheDocument();
+  expect(screen.getByLabelText("Generated prompt")).toHaveValue("my manual prompt");
 });
 ```
 
