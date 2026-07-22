@@ -129,3 +129,11 @@
 .sync-status strong{font-size:.85rem;letter-spacing:.04em}
 .sync-status p,.sync-status time{display:block;margin:3px 0 0;color:#8f8f8c;font-size:.75rem}
 @keyframes sync-status-pulse{50%{opacity:.35;transform:scale(.75)}}
+
+.migration-wizard{border:1px solid #343434;background:linear-gradient(160deg,#171717,#080808 72%);padding:24px;color:#e8e8e5}
+.migration-wizard h2{margin:6px 0 16px;font-family:var(--font-prompt),Tahoma,"Noto Sans Thai",Arial,sans-serif}
+.migration-wizard__eyebrow{margin:0;color:#8c8c8c;font-size:.72rem;letter-spacing:.14em}
+.migration-wizard__counts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;margin-bottom:16px;background:#333}
+.migration-wizard__counts span{background:#0d0d0d;padding:12px}
+.migration-wizard button{min-height:44px;border:1px solid #eee;background:#efefec;color:#080808;padding:10px 16px;font:inherit;cursor:pointer}
+.migration-wizard__note,.migration-wizard__denied{color:#8c8c8c;font-size:.8rem}
