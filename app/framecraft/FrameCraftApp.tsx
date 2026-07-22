@@ -8,11 +8,13 @@ import { CategorySection } from "./CategorySection";
 import { ChapterNav } from "./ChapterNav";
 import { readImageDimensions, validateMediaFile, validateVideoReferenceUrl } from "./media-service";
 import { composePrompt } from "./prompt-composer";
+import { reconcileSelectionForMode, validateTechniqueSelection } from "./prompt-selection";
+import { createPromptSession, editPrompt, markPromptStale, replaceWithAutomaticPrompt, updateAutomaticCandidate } from "./prompt-session";
 import { PromptPanel } from "./PromptPanel";
 import { categoryLabels, starterTechniques } from "./seed-data";
 import { starterMediaUrls } from "./starter-media";
 import { frameCraftDb, mediaRepository, ownerMutationRepository, promptRepository, restoreBackup, settingsRepository, syncConflictRepository, syncMetadataRepository, syncQueueRepository, techniqueRepository } from "./storage";
-import type { AppSettings, MediaRecord, PromptInput, SavedPrompt, SyncEntity, SyncQueueRecord, Technique, TechniqueCategory } from "./types";
+import type { AppSettings, MediaRecord, OutputLanguage, PromptInput, PromptMode, SavedPrompt, SyncEntity, SyncQueueRecord, Technique, TechniqueCategory } from "./types";
 import type { OwnerSession, SyncStatusSnapshot } from "./cloud/contracts";
 import { createAppCloudRuntime, type AppCloudRuntime } from "./cloud/app-runtime";
 import { OwnerAuthPanel } from "./OwnerAuthPanel";
@@ -48,19 +50,6 @@ const navItems: Array<{ id: View; th: string; en: string; icon: typeof BookOpen 
   { id: "settings", th: "ตั้งค่าและสำรอง", en: "Settings", icon: Settings },
 ];
 
-function applyTechnique(input: PromptInput, technique: Technique): PromptInput {
-  const value = technique.imageKeywords[0] || technique.genericImagePrompt;
-  switch (technique.category) {
-    case "shot-size": return { ...input, shotSize: value };
-    case "camera-angle": return { ...input, angle: value };
-    case "camera-movement": return { ...input, movement: technique.videoKeywords[0] || value };
-    case "lighting": return { ...input, lighting: value };
-    case "composition": return { ...input, composition: value };
-    case "lens": return { ...input, lens: value };
-    case "camera-settings": return { ...input, mood: `${input.mood}, ${value}` };
-  }
-}
-
 export function FrameCraftApp({
   initialTechniques = starterTechniques,
   persistence = "indexeddb",
@@ -74,7 +63,15 @@ export function FrameCraftApp({
   const [activeChapter, setActiveChapter] = useState<TechniqueCategory>("shot-size");
   const [selected, setSelected] = useState<Technique[]>([]);
   const [promptInput, setPromptInput] = useState<PromptInput>(emptyPrompt);
-  const [outputOverride, setOutputOverride] = useState("");
+  const [outputLanguage, setOutputLanguage] = useState<OutputLanguage>("en");
+  const composition = useMemo(
+    () => composePrompt({ input: promptInput, selected, outputLanguage }),
+    [outputLanguage, promptInput, selected],
+  );
+  const [promptSession, setPromptSession] = useState(
+    () => createPromptSession(composition.prompt),
+  );
+  const [selectionWarning, setSelectionWarning] = useState("");
   const [detail, setDetail] = useState<Technique | null>(null);
   const [notice, setNotice] = useState("");
   const [savedPrompts, setSavedPrompts] = useState<SavedPrompt[]>([]);
@@ -279,17 +276,126 @@ export function FrameCraftApp({
     return () => observer.disconnect();
   }, [chapterCounts]);
 
+  function promptWillBeReplaced() {
+    return promptSession.state === "manual"
+      || promptSession.state === "stale"
+      || promptSession.state === "ai-applied";
+  }
+
+  function confirmPromptRegeneration(detailMessage = "") {
+    const message = language === "th"
+      ? `เมื่อแก้ไขแล้ว GENERATED PROMPT จะถูกสร้างใหม่${detailMessage ? `\n\n${detailMessage}` : ""}\n\nยืนยันจะแก้ไขไหม?`
+      : `GENERATED PROMPT will be regenerated after this change.${detailMessage ? `\n\n${detailMessage}` : ""}\n\nContinue?`;
+    return window.confirm(message);
+  }
+
+  function regeneratePrompt(
+    input: PromptInput,
+    nextSelected: Technique[],
+    nextLanguage = outputLanguage,
+  ) {
+    return composePrompt({
+      input,
+      selected: nextSelected,
+      outputLanguage: nextLanguage,
+    }).prompt;
+  }
+
   function addToPrompt(technique: Technique) {
-    setSelected((current) => current.some((item) => item.id === technique.id) ? current : [...current, technique]);
-    setPromptInput((current) => applyTechnique(current, technique));
-    setOutputOverride("");
+    const decision = validateTechniqueSelection(
+      promptInput.mode,
+      selected,
+      technique,
+    );
+    if (!decision.allowed) {
+      if (decision.reason === "duplicate") {
+        setSelectionWarning(
+          language === "th"
+            ? `${technique.titleEn} ถูกเลือกไว้แล้ว จึงไม่สามารถเพิ่มซ้ำได้`
+            : `${technique.titleEn} is already selected and cannot be added twice.`,
+        );
+        return;
+      }
+      const existing = selected.find(
+        (item) => item.id === decision.currentTechniqueId,
+      );
+      setSelectionWarning(language === "th"
+        ? `โหมด Image เลือกได้เพียง 1 รายการในหมวด ${categoryLabels[technique.category].th} ขณะนี้เลือก ${existing?.titleEn ?? "รายการเดิม"} อยู่ กรุณานำรายการเดิมออกก่อน`
+        : `Image mode allows only one ${categoryLabels[technique.category].en}. Remove ${existing?.titleEn ?? "the current item"} first.`);
+      return;
+    }
+
+    if (promptWillBeReplaced() && !confirmPromptRegeneration()) return;
+    const nextSelected = [...selected, technique];
+    setSelected(nextSelected);
+    setSelectionWarning("");
+    setPromptSession(createPromptSession(
+      regeneratePrompt(promptInput, nextSelected),
+    ));
   }
 
   function removeFromPrompt(id: string) {
-    const remaining = selected.filter((item) => item.id !== id);
-    setSelected(remaining);
-    setPromptInput(remaining.reduce(applyTechnique, { ...emptyPrompt, subject: promptInput.subject, action: promptInput.action, environment: promptInput.environment, mode: promptInput.mode, platform: promptInput.platform }));
-    setOutputOverride("");
+    if (!selected.some((item) => item.id === id)) return;
+    if (promptWillBeReplaced() && !confirmPromptRegeneration()) return;
+    const nextSelected = selected.filter((item) => item.id !== id);
+    setSelected(nextSelected);
+    setSelectionWarning("");
+    setPromptSession(createPromptSession(
+      regeneratePrompt(promptInput, nextSelected),
+    ));
+  }
+
+  function changePromptField(
+    changes: Partial<PromptInput>,
+    reason: string,
+  ) {
+    const nextInput = { ...promptInput, ...changes };
+    const nextAutomatic = regeneratePrompt(nextInput, selected);
+    setPromptInput(nextInput);
+    setPromptSession((current) => {
+      const withCandidate = updateAutomaticCandidate(current, nextAutomatic);
+      return current.state === "auto"
+        ? withCandidate
+        : markPromptStale(withCandidate, reason);
+    });
+  }
+
+  function changeOutputLanguage(nextLanguage: OutputLanguage) {
+    if (nextLanguage === outputLanguage) return;
+    const nextAutomatic = regeneratePrompt(
+      promptInput,
+      selected,
+      nextLanguage,
+    );
+    setOutputLanguage(nextLanguage);
+    setPromptSession((current) => {
+      const withCandidate = updateAutomaticCandidate(current, nextAutomatic);
+      return current.state === "auto"
+        ? withCandidate
+        : markPromptStale(withCandidate, "output-language");
+    });
+  }
+
+  function changePromptMode(mode: PromptMode) {
+    if (mode === promptInput.mode) return;
+    const reconciled = reconcileSelectionForMode(mode, selected);
+    const removedMessage = reconciled.removed.length
+      ? `${language === "th" ? "รายการที่จะถูกนำออก" : "Items to remove"}: ${reconciled.removed.map((item) => item.titleEn).join(", ")}`
+      : "";
+    if ((promptWillBeReplaced() || reconciled.removed.length > 0)
+      && !confirmPromptRegeneration(removedMessage)) return;
+    const nextInput: PromptInput = {
+      ...promptInput,
+      mode,
+      platform: mode === "image" ? "generic-image" : "generic-video",
+      ...(mode === "image" ? { duration: "", pacing: "" } : {}),
+    };
+    setPromptInput(nextInput);
+    setSelected(reconciled.kept);
+    setSelectionWarning("");
+    setPromptSession(createPromptSession(
+      regeneratePrompt(nextInput, reconciled.kept),
+    ));
   }
 
   function toggleFavorite(technique: Technique) {
@@ -313,20 +419,26 @@ export function FrameCraftApp({
   }
 
   function resetPrompt() {
-    setSelected([]); setPromptInput(emptyPrompt); setOutputOverride("");
+    if (promptWillBeReplaced() && !confirmPromptRegeneration()) return;
+    setSelected([]);
+    setPromptInput(emptyPrompt);
+    setOutputLanguage("en");
+    setSelectionWarning("");
+    setPromptSession(createPromptSession(
+      regeneratePrompt(emptyPrompt, [], "en"),
+    ));
   }
 
   function savePrompt() {
     const now = new Date().toISOString();
-    const generated = composePrompt({ input: promptInput, selected, outputLanguage: "en" }).prompt;
     const record: SavedPrompt = {
       id: crypto.randomUUID(),
       name: promptInput.subject.trim() || `Untitled ${promptInput.mode} prompt`,
       mode: promptInput.mode,
       platform: promptInput.platform,
       input: promptInput,
-      generatedPrompt: generated,
-      editedPrompt: outputOverride || generated,
+      generatedPrompt: composition.prompt,
+      editedPrompt: promptSession.value,
       isFavorite: true,
       createdAt: now,
       updatedAt: now,
@@ -340,6 +452,23 @@ export function FrameCraftApp({
     })();
     setNotice(language === "th" ? "บันทึก Prompt แล้ว" : "Prompt saved");
     window.setTimeout(() => setNotice(""), 2200);
+  }
+
+  function openSavedPrompt(prompt: SavedPrompt) {
+    const automatic = composePrompt({
+      input: prompt.input,
+      selected: [],
+      outputLanguage: "en",
+    }).prompt;
+    const automaticSession = createPromptSession(automatic);
+    setPromptInput(prompt.input);
+    setSelected([]);
+    setOutputLanguage("en");
+    setSelectionWarning("");
+    setPromptSession(prompt.editedPrompt === prompt.generatedPrompt
+      ? automaticSession
+      : editPrompt(automaticSession, prompt.editedPrompt));
+    setView("prompt");
   }
 
   function downloadArchive(bytes: Uint8Array, filename: string) {
@@ -512,7 +641,7 @@ export function FrameCraftApp({
             {isOwner ? <button className="new-technique" onClick={() => { setEditing(null); setShowNew(true); }}><Plus size={17} /> เพิ่มมุมภาพ</button> : null}
           </section>
           <div className="library-summary"><span>{String(filtered.length).padStart(2, "0")} / {copy.count}</span><span>07 / PRODUCTION CHAPTERS</span></div>
-          {view === "favorites" && savedPrompts.length > 0 && <section className="saved-prompts"><div className="section-label"><span>SAVED PROMPTS / {String(savedPrompts.length).padStart(2, "0")}</span></div>{savedPrompts.map((prompt) => <article key={prompt.id}><span>{prompt.mode.toUpperCase()} · {prompt.platform}</span><h2>{prompt.name}</h2><p>{prompt.editedPrompt}</p><div><button onClick={() => { setPromptInput(prompt.input); setOutputOverride(prompt.editedPrompt); setView("prompt"); }}>เปิดใน Prompt Lab</button>{isOwner ? <button aria-label={`ลบ ${prompt.name}`} onClick={() => void removeSavedPrompt(prompt)}><X size={14} /></button> : null}</div></article>)}</section>}
+          {view === "favorites" && savedPrompts.length > 0 && <section className="saved-prompts"><div className="section-label"><span>SAVED PROMPTS / {String(savedPrompts.length).padStart(2, "0")}</span></div>{savedPrompts.map((prompt) => <article key={prompt.id}><span>{prompt.mode.toUpperCase()} · {prompt.platform}</span><h2>{prompt.name}</h2><p>{prompt.editedPrompt}</p><div><button onClick={() => openSavedPrompt(prompt)}>เปิดใน Prompt Lab</button>{isOwner ? <button aria-label={`ลบ ${prompt.name}`} onClick={() => void removeSavedPrompt(prompt)}><X size={14} /></button> : null}</div></article>)}</section>}
           <ChapterNav active={visibleActiveChapter} counts={chapterCounts} language={language} />
           {filtered.length ? <div className="production-chapters">{categoryOrder.map((categoryId, index) => <CategorySection key={categoryId} category={categoryId} index={index} techniques={grouped[categoryId].map((item) => ({ ...item, isFavorite: favoriteIds.has(item.id) }))} language={language} mediaUrls={mediaUrls} onAdd={addToPrompt} onFavorite={toggleFavorite} onOpen={setDetail} />)}</div> : <section className="empty-state"><Search size={28} /><h2>ไม่พบเทคนิคที่ค้นหา</h2><p>ลองเปลี่ยนคำค้นหรือใช้คำที่กว้างขึ้น</p><button onClick={() => setSearch("")}>ล้างคำค้น</button></section>}
         </>}
@@ -546,10 +675,10 @@ export function FrameCraftApp({
           </div>
         </section>}
 
-        {view === "prompt" && <div className="mobile-prompt-view"><PromptPanel input={promptInput} selected={selected} outputOverride={outputOverride} onInput={(changes) => { setPromptInput((current) => ({ ...current, ...changes })); setOutputOverride(""); }} onOutput={setOutputOverride} onRemove={removeFromPrompt} onReset={resetPrompt} onSave={savePrompt} /></div>}
+        {view === "prompt" && <div className="mobile-prompt-view"><PromptPanel input={promptInput} selected={selected} composition={composition} session={promptSession} outputLanguage={outputLanguage} selectionWarning={selectionWarning} onFieldChange={changePromptField} onModeChange={changePromptMode} onLanguageChange={changeOutputLanguage} onOutputEdit={(value) => setPromptSession((current) => editPrompt(current, value))} onRegenerate={() => setPromptSession((current) => replaceWithAutomaticPrompt(current, current.automaticPrompt))} onRemove={removeFromPrompt} onReset={resetPrompt} onSave={savePrompt} /></div>}
       </main>
 
-      <PromptPanel compact input={promptInput} selected={selected} outputOverride={outputOverride} onInput={(changes) => { setPromptInput((current) => ({ ...current, ...changes })); setOutputOverride(""); }} onOutput={setOutputOverride} onRemove={removeFromPrompt} onReset={resetPrompt} onSave={savePrompt} />
+      <PromptPanel compact input={promptInput} selected={selected} composition={composition} session={promptSession} outputLanguage={outputLanguage} selectionWarning={selectionWarning} onFieldChange={changePromptField} onModeChange={changePromptMode} onLanguageChange={changeOutputLanguage} onOutputEdit={(value) => setPromptSession((current) => editPrompt(current, value))} onRegenerate={() => setPromptSession((current) => replaceWithAutomaticPrompt(current, current.automaticPrompt))} onRemove={removeFromPrompt} onReset={resetPrompt} onSave={savePrompt} />
 
       {detail && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDetail(null)}><section className="detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title" onMouseDown={(event) => event.stopPropagation()}><button className="dialog-close" onClick={() => setDetail(null)} aria-label="ปิดรายละเอียด"><X /></button><div className="detail-visual" data-category={detail.category}>{detailImageUrl ? <img /* eslint-disable-line @next/next/no-img-element */ className={detail.id === "shot-close-up" ? "natural-color-reference" : undefined} src={detailImageUrl} alt={`ภาพอ้างอิง ${detail.titleTh}`} /> : <><span className="viewfinder-grid" /><b>{detail.abbreviation || detail.recommendedLenses[0]}</b></>}</div><div className="detail-copy"><span className="kicker">{categoryLabels[detail.category].en}</span><h2 id="detail-title">{detail.titleEn}</h2><h3>{detail.titleTh}</h3><p>{detail.descriptionTh}</p><dl><div><dt>ใช้เมื่อ</dt><dd>{detail.useCasesTh}</dd></div><div><dt>ผลต่อภาพ</dt><dd>{detail.effectTh}</dd></div><div><dt>Lens</dt><dd>{detail.recommendedLenses.join(", ") || "เลือกตามบริบท"}</dd></div><div><dt>ระวัง</dt><dd>{detail.warningsTh}</dd></div></dl><code>{detail.genericImagePrompt}</code><button className="primary-button" onClick={() => { addToPrompt(detail); setDetail(null); }}><Plus size={16} /> เพิ่มเข้า Prompt Lab</button></div></section></div>}
 
