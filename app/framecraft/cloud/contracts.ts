@@ -130,6 +130,12 @@ export interface CloudMediaRepository {
     baseVersion: number | null,
     operationId: string,
   ): Promise<{ record: CloudMediaRow; sync: SyncApplyResult }>;
+  remove(
+    record: MediaRecord,
+    ownerUserId: string,
+    baseVersion: number,
+    operationId: string,
+  ): Promise<SyncApplyResult>;
 }
 
 export interface PrivateSettingsRepository {

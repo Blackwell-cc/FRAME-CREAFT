@@ -217,6 +217,77 @@ export function createSyncMetadataRepository(db: FrameCraftDb) {
   };
 }
 
+export function createFavoriteRepository(db: FrameCraftDb) {
+  return {
+    listByUser(userId: string) {
+      return db.favorites.where("userId").equals(userId).toArray();
+    },
+    save(record: LocalFavoriteRecord) {
+      return db.favorites.put(record);
+    },
+    delete(id: string) {
+      return db.favorites.delete(id);
+    },
+  };
+}
+
+export function createOwnerMutationRepository(db: FrameCraftDb) {
+  return {
+    async saveTechnique(record: Technique, queue: SyncQueueRecord) {
+      await db.transaction("rw", db.techniques, db.syncQueue, async () => {
+        await db.techniques.put(record);
+        await db.syncQueue.put(queue);
+      });
+    },
+    async deleteTechnique(id: string, queue: SyncQueueRecord, media?: MediaRecord, mediaQueue?: SyncQueueRecord) {
+      await db.transaction("rw", db.techniques, db.media, db.syncQueue, async () => {
+        await db.techniques.delete(id);
+        if (media) await db.media.delete(media.id);
+        await db.syncQueue.put(queue);
+        if (mediaQueue) await db.syncQueue.put(mediaQueue);
+      });
+    },
+    async saveMedia(record: MediaRecord, queue: SyncQueueRecord) {
+      await db.transaction("rw", db.media, db.syncQueue, async () => {
+        const existing = await db.media.where("techniqueId").equals(record.techniqueId).first();
+        if (existing && existing.id !== record.id) await db.media.delete(existing.id);
+        await db.media.put(record);
+        await db.syncQueue.put(queue);
+      });
+    },
+    async savePrompt(record: SavedPrompt, queue: SyncQueueRecord) {
+      await db.transaction("rw", db.prompts, db.syncQueue, async () => {
+        await db.prompts.put(record);
+        await db.syncQueue.put(queue);
+      });
+    },
+    async deletePrompt(id: string, queue: SyncQueueRecord) {
+      await db.transaction("rw", db.prompts, db.syncQueue, async () => {
+        await db.prompts.delete(id);
+        await db.syncQueue.put(queue);
+      });
+    },
+    async saveFavorite(record: LocalFavoriteRecord, queue: SyncQueueRecord) {
+      await db.transaction("rw", db.favorites, db.syncQueue, async () => {
+        await db.favorites.put(record);
+        await db.syncQueue.put(queue);
+      });
+    },
+    async deleteFavorite(id: string, queue: SyncQueueRecord) {
+      await db.transaction("rw", db.favorites, db.syncQueue, async () => {
+        await db.favorites.delete(id);
+        await db.syncQueue.put(queue);
+      });
+    },
+    async saveSettings(record: AppSettings, queue: SyncQueueRecord) {
+      await db.transaction("rw", db.settings, db.syncQueue, async () => {
+        await db.settings.put(record);
+        await db.syncQueue.put(queue);
+      });
+    },
+  };
+}
+
 interface RestorePayload {
   techniques: Technique[];
   prompts: SavedPrompt[];
@@ -259,3 +330,5 @@ export const settingsRepository = createSettingsRepository(frameCraftDb);
 export const syncQueueRepository = createSyncQueueRepository(frameCraftDb);
 export const syncConflictRepository = createSyncConflictRepository(frameCraftDb);
 export const syncMetadataRepository = createSyncMetadataRepository(frameCraftDb);
+export const favoriteRepository = createFavoriteRepository(frameCraftDb);
+export const ownerMutationRepository = createOwnerMutationRepository(frameCraftDb);

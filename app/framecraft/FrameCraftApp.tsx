@@ -6,13 +6,19 @@ import { createBackupArchive, inspectBackupArchive } from "./backup-service";
 import { categoryOrder } from "./category-guides";
 import { CategorySection } from "./CategorySection";
 import { ChapterNav } from "./ChapterNav";
-import { validateMediaFile, validateVideoReferenceUrl } from "./media-service";
+import { readImageDimensions, validateMediaFile, validateVideoReferenceUrl } from "./media-service";
 import { composePrompt } from "./prompt-composer";
 import { PromptPanel } from "./PromptPanel";
 import { categoryLabels, starterTechniques } from "./seed-data";
 import { starterMediaUrls } from "./starter-media";
-import { frameCraftDb, mediaRepository, promptRepository, restoreBackup, settingsRepository, techniqueRepository } from "./storage";
-import type { AppSettings, PromptInput, SavedPrompt, Technique, TechniqueCategory } from "./types";
+import { frameCraftDb, mediaRepository, ownerMutationRepository, promptRepository, restoreBackup, settingsRepository, syncConflictRepository, syncMetadataRepository, syncQueueRepository, techniqueRepository } from "./storage";
+import type { AppSettings, MediaRecord, PromptInput, SavedPrompt, SyncEntity, SyncQueueRecord, Technique, TechniqueCategory } from "./types";
+import type { OwnerSession, SyncStatusSnapshot } from "./cloud/contracts";
+import { createAppCloudRuntime, type AppCloudRuntime } from "./cloud/app-runtime";
+import { OwnerAuthPanel } from "./OwnerAuthPanel";
+import { MigrationWizard } from "./MigrationWizard";
+import { createSyncEngine } from "./cloud/sync-engine";
+import { SyncStatus } from "./SyncStatus";
 import "./framecraft.css";
 
 type View = "library" | "favorites" | "manage" | "settings" | "prompt";
@@ -20,6 +26,8 @@ type View = "library" | "favorites" | "manage" | "settings" | "prompt";
 interface FrameCraftAppProps {
   initialTechniques?: Technique[];
   persistence?: "indexeddb" | "memory";
+  initialOwnerSession?: OwnerSession;
+  cloudRuntime?: AppCloudRuntime | null;
 }
 
 const emptyPrompt: PromptInput = {
@@ -53,7 +61,12 @@ function applyTechnique(input: PromptInput, technique: Technique): PromptInput {
   }
 }
 
-export function FrameCraftApp({ initialTechniques = starterTechniques, persistence = "indexeddb" }: FrameCraftAppProps) {
+export function FrameCraftApp({
+  initialTechniques = starterTechniques,
+  persistence = "indexeddb",
+  initialOwnerSession = { state: "signed-out" },
+  cloudRuntime,
+}: FrameCraftAppProps) {
   const [techniques, setTechniques] = useState<Technique[]>(initialTechniques);
   const [view, setView] = useState<View>("library");
   const [language, setLanguage] = useState<"th" | "en">("th");
@@ -71,7 +84,35 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
   const [showNew, setShowNew] = useState(false);
   const [editing, setEditing] = useState<Technique | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
+  const [ownerSession, setOwnerSession] = useState<OwnerSession>(initialOwnerSession);
+  const [favoriteIds, setFavoriteIds] = useState(() => new Set(initialTechniques.filter((item) => item.isFavorite).map((item) => item.id)));
+  const [syncSnapshot, setSyncSnapshot] = useState<SyncStatusSnapshot>({ state: "connected", pendingCount: 0, conflictCount: 0, lastSyncedAt: null });
   const importRef = useRef<HTMLInputElement>(null);
+  const runtime = useMemo(() => {
+    if (cloudRuntime !== undefined) return cloudRuntime;
+    if (persistence === "memory") return null;
+    return createAppCloudRuntime({
+      NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY,
+    });
+  }, [cloudRuntime, persistence]);
+  const isOwner = ownerSession.state === "owner";
+  const syncEngine = useMemo(() => {
+    if (!runtime || persistence !== "indexeddb") return null;
+    return createSyncEngine({
+      queue: syncQueueRepository,
+      conflicts: syncConflictRepository,
+      metadata: syncMetadataRepository,
+      refresh: async () => { await runtime.loadPublic(); },
+      apply: (record) => runtime.apply(record),
+      getSession: () => runtime.auth.getSession(),
+      isOnline: () => typeof navigator === "undefined" || navigator.onLine,
+      now: () => new Date().toISOString(),
+    });
+  }, [persistence, runtime]);
+  const migrationService = useMemo(() => ownerSession.state === "owner" && runtime
+    ? runtime.migration(ownerSession.userId)
+    : null, [ownerSession, runtime]);
 
   useEffect(() => {
     if (persistence === "memory") return;
@@ -102,6 +143,92 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
     return () => { active = false; loadedUrls.forEach((url) => URL.revokeObjectURL(url)); };
   }, [persistence]);
 
+  useEffect(() => {
+    if (!runtime || persistence === "memory") return;
+    let active = true;
+    void runtime.loadPublic().then(({ techniques: cloudTechniques, mediaUrls: cloudMediaUrls }) => {
+      if (!active || cloudTechniques.length === 0) return;
+      setTechniques(cloudTechniques);
+      setMediaUrls((current) => ({ ...current, ...cloudMediaUrls }));
+      void frameCraftDb.techniques.bulkPut(cloudTechniques);
+    }).catch(() => undefined);
+    void runtime.auth.getSession().then((session) => {
+      if (active) setOwnerSession(session);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [persistence, runtime]);
+
+  useEffect(() => {
+    if (!runtime || ownerSession.state !== "owner") return;
+    let active = true;
+    void runtime.loadOwner().then(({ prompts, favorites, settings: cloudSettings }) => {
+      if (!active) return;
+      setSavedPrompts(prompts);
+      setFavoriteIds(new Set(favorites.filter((item) => item.entity_type === "technique").map((item) => item.entity_id)));
+      if (cloudSettings) {
+        setSettings(cloudSettings);
+        setLanguage(cloudSettings.language);
+        setPromptInput((current) => ({ ...current, mode: cloudSettings.defaultMode, platform: cloudSettings.defaultPlatform }));
+      }
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [ownerSession, runtime]);
+
+  useEffect(() => {
+    if (!syncEngine) return;
+    const unsubscribe = syncEngine.subscribeStatus(setSyncSnapshot);
+    const sync = () => { void syncEngine.syncNow(); };
+    window.addEventListener("online", sync);
+    window.addEventListener("offline", sync);
+    void syncEngine.start();
+    return () => {
+      unsubscribe();
+      window.removeEventListener("online", sync);
+      window.removeEventListener("offline", sync);
+    };
+  }, [syncEngine]);
+
+  async function createQueueRecord(entity: SyncEntity, entityId: string, action: "upsert" | "delete", payload: unknown): Promise<SyncQueueRecord | null> {
+    if (ownerSession.state !== "owner" || persistence !== "indexeddb") return null;
+    const now = new Date().toISOString();
+    const version = await syncMetadataRepository.get(`cloud-version:${entity}:${entityId}`);
+    return {
+      operationId: crypto.randomUUID(), userId: ownerSession.userId, entity, entityId, action,
+      baseVersion: typeof version?.value === "number" ? version.value : null,
+      payload, attempts: 0, createdAt: now, updatedAt: now,
+    };
+  }
+
+  async function persistTechnique(record: Technique) {
+    const queue = await createQueueRecord("technique", record.id, "upsert", record);
+    if (queue) await ownerMutationRepository.saveTechnique(record, queue);
+    else if (await techniqueRepository.getById(record.id)) await techniqueRepository.update(record.id, record);
+    else await techniqueRepository.create(record);
+    await syncEngine?.syncNow();
+  }
+
+  async function persistMedia(record: MediaRecord) {
+    const queue = await createQueueRecord("media", record.id, "upsert", record);
+    if (queue) await ownerMutationRepository.saveMedia(record, queue);
+    else await mediaRepository.save(record);
+    await syncEngine?.syncNow();
+  }
+
+  async function hideTechnique(technique: Technique) {
+    const next = { ...technique, isHidden: !technique.isHidden, updatedAt: new Date().toISOString() };
+    setTechniques((current) => current.map((item) => item.id === technique.id ? next : item));
+    if (persistence === "indexeddb") await persistTechnique(next);
+  }
+
+  async function removeSavedPrompt(prompt: SavedPrompt) {
+    setSavedPrompts((current) => current.filter((item) => item.id !== prompt.id));
+    if (persistence !== "indexeddb") return;
+    const queue = await createQueueRecord("saved_prompt", prompt.id, "delete", {});
+    if (queue) await ownerMutationRepository.deletePrompt(prompt.id, queue);
+    else await promptRepository.delete(prompt.id);
+    await syncEngine?.syncNow();
+  }
+
   function updateSettings(changes: Partial<AppSettings>) {
     const next = { ...settings, ...changes, updatedAt: new Date().toISOString() };
     setSettings(next);
@@ -113,16 +240,21 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
         platform: changes.defaultPlatform || current.platform,
       }));
     }
-    if (persistence === "indexeddb") void settingsRepository.save(next);
+    if (persistence === "indexeddb") void (async () => {
+      const queue = await createQueueRecord("user_settings", next.id, "upsert", next);
+      if (queue) await ownerMutationRepository.saveSettings(next, queue);
+      else await settingsRepository.save(next);
+      await syncEngine?.syncNow();
+    })();
   }
 
   const filtered = useMemo(() => techniques.filter((technique) => {
     if (technique.isHidden) return false;
-    if (view === "favorites" && !technique.isFavorite) return false;
+    if (view === "favorites" && !favoriteIds.has(technique.id)) return false;
     const query = search.trim().toLocaleLowerCase("th");
     if (!query) return true;
     return [technique.titleEn, technique.titleTh, technique.abbreviation, technique.descriptionTh, technique.useCasesTh, ...technique.tags, ...technique.moods].filter(Boolean).join(" ").toLocaleLowerCase("th").includes(query);
-  }), [techniques, view, search]);
+  }), [favoriteIds, techniques, view, search]);
 
   const grouped = useMemo(() => Object.fromEntries(
     categoryOrder.map((id) => [id, filtered.filter((item) => item.category === id)]),
@@ -161,9 +293,23 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
   }
 
   function toggleFavorite(technique: Technique) {
-    const next = !technique.isFavorite;
-    setTechniques((current) => current.map((item) => item.id === technique.id ? { ...item, isFavorite: next } : item));
-    if (persistence === "indexeddb") void techniqueRepository.update(technique.id, { isFavorite: next });
+    const willFavorite = !favoriteIds.has(technique.id);
+    setFavoriteIds((current) => {
+      const next = new Set(current);
+      if (next.has(technique.id)) next.delete(technique.id);
+      else next.add(technique.id);
+      return next;
+    });
+    if (ownerSession.state === "owner" && persistence === "indexeddb") void (async () => {
+      const id = `${ownerSession.userId}:technique:${technique.id}`;
+      const favorite = { id, userId: ownerSession.userId, entityType: "technique" as const, entityId: technique.id, createdAt: new Date().toISOString() };
+      const payload = { user_id: ownerSession.userId, entity_type: "technique" as const, entity_id: technique.id, created_at: favorite.createdAt };
+      const queue = await createQueueRecord("favorite", technique.id, willFavorite ? "upsert" : "delete", payload);
+      if (!queue) return;
+      if (willFavorite) await ownerMutationRepository.saveFavorite(favorite, queue);
+      else await ownerMutationRepository.deleteFavorite(id, queue);
+      await syncEngine?.syncNow();
+    })();
   }
 
   function resetPrompt() {
@@ -186,7 +332,12 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
       updatedAt: now,
     };
     setSavedPrompts((current) => [record, ...current]);
-    if (persistence === "indexeddb") void promptRepository.save(record);
+    if (persistence === "indexeddb") void (async () => {
+      const queue = await createQueueRecord("saved_prompt", record.id, "upsert", record);
+      if (queue) await ownerMutationRepository.savePrompt(record, queue);
+      else await promptRepository.save(record);
+      await syncEngine?.syncNow();
+    })();
     setNotice(language === "th" ? "บันทึก Prompt แล้ว" : "Prompt saved");
     window.setTimeout(() => setNotice(""), 2200);
   }
@@ -264,18 +415,16 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
       isFavorite: editing?.isFavorite || false, isHidden: editing?.isHidden || false, createdAt: editing?.createdAt || now, updatedAt: now,
     };
     setTechniques((current) => editing ? current.map((item) => item.id === record.id ? record : item) : [record, ...current]);
-    if (persistence === "indexeddb") {
-      if (editing) await techniqueRepository.update(record.id, record);
-      else await techniqueRepository.create(record);
-    }
+    if (persistence === "indexeddb") await persistTechnique(record);
     if (mediaFile instanceof File && mediaFile.size > 0) {
       const mediaId = crypto.randomUUID();
+      const dimensions = await readImageDimensions(mediaFile);
       const mediaRecord = {
         id: mediaId, techniqueId: record.id, blob: mediaFile, mimeType: mediaFile.type,
-        width: 0, height: 0, byteSize: mediaFile.size, altTh: `ภาพอ้างอิง ${titleTh}`,
+        width: dimensions.width, height: dimensions.height, byteSize: mediaFile.size, altTh: `ภาพอ้างอิง ${titleTh}`,
         altEn: `${titleEn} reference image`, createdAt: now, updatedAt: now,
       };
-      if (persistence === "indexeddb") await mediaRepository.save(mediaRecord);
+      if (persistence === "indexeddb") await persistMedia(mediaRecord);
       setMediaUrls((current) => {
         if (current[record.id]) URL.revokeObjectURL(current[record.id]);
         return { ...current, [record.id]: URL.createObjectURL(mediaFile) };
@@ -293,11 +442,11 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
     };
     setTechniques((current) => [copy, ...current]);
     if (persistence === "indexeddb") {
-      await techniqueRepository.create(copy);
+      await persistTechnique(copy);
       const media = await mediaRepository.getByTechnique(source.id);
       if (media) {
         const cloned = { ...media, id: crypto.randomUUID(), techniqueId: copy.id, blob: media.blob.slice(), createdAt: now, updatedAt: now };
-        await mediaRepository.save(cloned);
+        await persistMedia(cloned);
         setMediaUrls((current) => ({ ...current, [copy.id]: URL.createObjectURL(cloned.blob) }));
       }
     }
@@ -309,8 +458,14 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
     setTechniques((current) => current.filter((item) => item.id !== technique.id));
     if (persistence === "indexeddb") {
       const media = await mediaRepository.getByTechnique(technique.id);
-      if (media) await mediaRepository.delete(media.id);
-      await techniqueRepository.delete(technique.id);
+      const queue = await createQueueRecord("technique", technique.id, "delete", {});
+      const mediaQueue = media ? await createQueueRecord("media", media.id, "delete", media) : null;
+      if (queue) await ownerMutationRepository.deleteTechnique(technique.id, queue, media, mediaQueue ?? undefined);
+      else {
+        if (media) await mediaRepository.delete(media.id);
+        await techniqueRepository.delete(technique.id);
+      }
+      await syncEngine?.syncNow();
     }
     setMediaUrls((current) => {
       if (current[technique.id]) URL.revokeObjectURL(current[technique.id]);
@@ -340,7 +495,7 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
       <nav className={`app-rail ${mobileMenu ? "is-open" : ""}`} aria-label="เมนูหลัก">
         <button className="rail-mark" onClick={goHome} aria-label="FRAME / CRAFT Home"><Video size={22} strokeWidth={1.7} aria-hidden="true" /></button>
         <div className="rail-links">
-          {navItems.map(({ id, th, en, icon: Icon }) => <button key={id} className={view === id ? "is-active" : ""} onClick={() => { setView(id); setMobileMenu(false); }} aria-label={th} title={language === "th" ? th : en}><Icon size={19} /><span>{language === "th" ? th : en}</span></button>)}
+          {navItems.filter(({ id }) => id !== "manage" || isOwner).map(({ id, th, en, icon: Icon }) => <button key={id} className={view === id ? "is-active" : ""} onClick={() => { setView(id); setMobileMenu(false); }} aria-label={th} title={language === "th" ? th : en}><Icon size={19} /><span>{language === "th" ? th : en}</span></button>)}
         </div>
         <button className="rail-language" aria-label={language === "th" ? "เปลี่ยนภาษาเป็นอังกฤษ" : "Switch language to Thai"} onClick={() => updateSettings({ language: language === "th" ? "en" : "th" })}><Languages size={18} /><span>{language === "th" ? "TH" : "EN"}</span></button>
       </nav>
@@ -354,15 +509,15 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
           </section>
           <section className="library-toolbar">
             <label className="search-field"><Search size={18} /><input type="search" aria-label="ค้นหาคลัง Production" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={copy.search} /><kbd>⌘ K</kbd></label>
-            <button className="new-technique" onClick={() => { setEditing(null); setShowNew(true); }}><Plus size={17} /> เพิ่มมุมภาพ</button>
+            {isOwner ? <button className="new-technique" onClick={() => { setEditing(null); setShowNew(true); }}><Plus size={17} /> เพิ่มมุมภาพ</button> : null}
           </section>
           <div className="library-summary"><span>{String(filtered.length).padStart(2, "0")} / {copy.count}</span><span>07 / PRODUCTION CHAPTERS</span></div>
-          {view === "favorites" && savedPrompts.length > 0 && <section className="saved-prompts"><div className="section-label"><span>SAVED PROMPTS / {String(savedPrompts.length).padStart(2, "0")}</span></div>{savedPrompts.map((prompt) => <article key={prompt.id}><span>{prompt.mode.toUpperCase()} · {prompt.platform}</span><h2>{prompt.name}</h2><p>{prompt.editedPrompt}</p><div><button onClick={() => { setPromptInput(prompt.input); setOutputOverride(prompt.editedPrompt); setView("prompt"); }}>เปิดใน Prompt Lab</button><button aria-label={`ลบ ${prompt.name}`} onClick={() => { setSavedPrompts((current) => current.filter((item) => item.id !== prompt.id)); if (persistence === "indexeddb") void promptRepository.delete(prompt.id); }}><X size={14} /></button></div></article>)}</section>}
+          {view === "favorites" && savedPrompts.length > 0 && <section className="saved-prompts"><div className="section-label"><span>SAVED PROMPTS / {String(savedPrompts.length).padStart(2, "0")}</span></div>{savedPrompts.map((prompt) => <article key={prompt.id}><span>{prompt.mode.toUpperCase()} · {prompt.platform}</span><h2>{prompt.name}</h2><p>{prompt.editedPrompt}</p><div><button onClick={() => { setPromptInput(prompt.input); setOutputOverride(prompt.editedPrompt); setView("prompt"); }}>เปิดใน Prompt Lab</button>{isOwner ? <button aria-label={`ลบ ${prompt.name}`} onClick={() => void removeSavedPrompt(prompt)}><X size={14} /></button> : null}</div></article>)}</section>}
           <ChapterNav active={visibleActiveChapter} counts={chapterCounts} language={language} />
-          {filtered.length ? <div className="production-chapters">{categoryOrder.map((categoryId, index) => <CategorySection key={categoryId} category={categoryId} index={index} techniques={grouped[categoryId]} language={language} mediaUrls={mediaUrls} onAdd={addToPrompt} onFavorite={toggleFavorite} onOpen={setDetail} />)}</div> : <section className="empty-state"><Search size={28} /><h2>ไม่พบเทคนิคที่ค้นหา</h2><p>ลองเปลี่ยนคำค้นหรือใช้คำที่กว้างขึ้น</p><button onClick={() => setSearch("")}>ล้างคำค้น</button></section>}
+          {filtered.length ? <div className="production-chapters">{categoryOrder.map((categoryId, index) => <CategorySection key={categoryId} category={categoryId} index={index} techniques={grouped[categoryId].map((item) => ({ ...item, isFavorite: favoriteIds.has(item.id) }))} language={language} mediaUrls={mediaUrls} onAdd={addToPrompt} onFavorite={toggleFavorite} onOpen={setDetail} />)}</div> : <section className="empty-state"><Search size={28} /><h2>ไม่พบเทคนิคที่ค้นหา</h2><p>ลองเปลี่ยนคำค้นหรือใช้คำที่กว้างขึ้น</p><button onClick={() => setSearch("")}>ล้างคำค้น</button></section>}
         </>}
 
-        {view === "manage" && <section className="utility-view">
+        {isOwner && view === "manage" && <section className="utility-view">
           <span className="kicker">LIBRARY CONTROL</span>
           <div className="utility-head"><div><h1>จัดการคลัง</h1><p>เพิ่ม แก้ไข ทำสำเนา ซ่อน หรือคืนค่า Production Reference ของคุณ</p></div><button className="primary-button" onClick={() => { setEditing(null); setShowNew(true); }}><Plus size={16} /> เพิ่มเทคนิค</button></div>
           <div className="manage-list">{techniques.map((technique) => <div key={technique.id}>
@@ -372,7 +527,7 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
             <span className="manage-actions">
               {technique.sourceType === "custom" && <button onClick={() => { setEditing(technique); setShowNew(true); }}>แก้ไข</button>}
               <button onClick={() => void duplicateTechnique(technique)}>สำเนา</button>
-              <button onClick={() => { setTechniques((current) => current.map((item) => item.id === technique.id ? { ...item, isHidden: !item.isHidden } : item)); if (persistence === "indexeddb") void techniqueRepository.update(technique.id, { isHidden: !technique.isHidden }); }}>{technique.isHidden ? "คืนค่า" : "ซ่อน"}</button>
+              <button onClick={() => void hideTechnique(technique)}>{technique.isHidden ? "คืนค่า" : "ซ่อน"}</button>
               {technique.sourceType === "custom" && <button className="danger-button" onClick={() => void deleteTechnique(technique)}>ลบ</button>}
             </span>
           </div>)}</div>
@@ -382,9 +537,12 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
           <span className="kicker">LOCAL-FIRST CONTROL</span>
           <div className="utility-head"><div><h1>ตั้งค่าและสำรองข้อมูล</h1><p>ข้อมูลหลักและรูปอ้างอิงเก็บในเบราว์เซอร์เครื่องนี้ Export ไว้ก่อนเปลี่ยนเครื่องหรือล้างข้อมูล</p></div></div>
           <div className="settings-grid">
-            <article><Download size={22} /><h2>Export Backup</h2><p>บันทึกเทคนิค Prompt การตั้งค่า และรูปอ้างอิงเป็นไฟล์ ZIP ชุดเดียว</p><button onClick={() => void exportBackup()}><Download size={15} /> Export ตอนนี้</button></article>
-            <article><Upload size={22} /><h2>Import Backup</h2><p>เลือก Merge เพื่อรวมรายการ หรือ Replace เพื่อแทนที่ทั้งหมดและดาวน์โหลด Snapshot เดิมอัตโนมัติ</p><label className="field"><span>วิธีนำเข้า</span><select value={importMode} onChange={(event) => setImportMode(event.target.value as "merge" | "replace")}><option value="merge">Merge — รวมข้อมูล</option><option value="replace">Replace — แทนที่ทั้งหมด</option></select></label><button onClick={() => importRef.current?.click()}><Upload size={15} /> เลือกไฟล์ ZIP</button><input ref={importRef} type="file" accept=".zip,application/zip" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file); }} /></article>
+            {runtime ? <OwnerAuthPanel key={`${ownerSession.state}:${"userId" in ownerSession ? ownerSession.userId : "guest"}`} repository={runtime.auth} initialSession={ownerSession} origin={typeof window === "undefined" ? "" : window.location.origin} onSessionChange={setOwnerSession} /> : <article><Settings size={22} /><h2>Cloud ยังไม่เชื่อมต่อ</h2><p>เว็บไซต์ยังใช้งานแบบ Local ได้ตามปกติ กรุณาตั้งค่า Supabase Environment เมื่อต้องการ Sync</p></article>}
+            {isOwner ? <article><Download size={22} /><h2>Export Backup</h2><p>บันทึกเทคนิค Prompt การตั้งค่า และรูปอ้างอิงเป็นไฟล์ ZIP ชุดเดียว</p><button onClick={() => void exportBackup()}><Download size={15} /> Export ตอนนี้</button></article> : null}
+            {isOwner ? <article><Upload size={22} /><h2>Import Backup</h2><p>เลือก Merge เพื่อรวมรายการ หรือ Replace เพื่อแทนที่ทั้งหมดและดาวน์โหลด Snapshot เดิมอัตโนมัติ</p><label className="field"><span>วิธีนำเข้า</span><select value={importMode} onChange={(event) => setImportMode(event.target.value as "merge" | "replace")}><option value="merge">Merge — รวมข้อมูล</option><option value="replace">Replace — แทนที่ทั้งหมด</option></select></label><button onClick={() => importRef.current?.click()}><Upload size={15} /> เลือกไฟล์ ZIP</button><input ref={importRef} type="file" accept=".zip,application/zip" hidden onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBackup(file); }} /></article> : null}
             <article><Languages size={22} /><h2>ค่าเริ่มต้น</h2><label className="field"><span>ภาษา UI</span><select value={settings.language} onChange={(event) => updateSettings({ language: event.target.value as "th" | "en" })}><option value="th">ภาษาไทย</option><option value="en">English</option></select></label><label className="field"><span>Prompt Mode</span><select value={settings.defaultMode} onChange={(event) => updateSettings({ defaultMode: event.target.value as "image" | "video" })}><option value="image">Image</option><option value="video">Video</option></select></label><label className="field"><span>Platform</span><select value={settings.defaultPlatform} onChange={(event) => updateSettings({ defaultPlatform: event.target.value as AppSettings["defaultPlatform"] })}><option value="generic-image">Generic Image</option><option value="midjourney">Midjourney</option><option value="flux">Flux</option><option value="generic-video">Generic Video</option><option value="runway">Runway</option><option value="kling">Kling</option><option value="veo">Veo</option></select></label></article>
+            {runtime && ownerSession.state === "owner" ? <SyncStatus snapshot={syncSnapshot} /> : null}
+            {migrationService ? <MigrationWizard isOwner service={migrationService} /> : null}
           </div>
         </section>}
 
@@ -395,7 +553,7 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
 
       {detail && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDetail(null)}><section className="detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title" onMouseDown={(event) => event.stopPropagation()}><button className="dialog-close" onClick={() => setDetail(null)} aria-label="ปิดรายละเอียด"><X /></button><div className="detail-visual" data-category={detail.category}>{detailImageUrl ? <img /* eslint-disable-line @next/next/no-img-element */ className={detail.id === "shot-close-up" ? "natural-color-reference" : undefined} src={detailImageUrl} alt={`ภาพอ้างอิง ${detail.titleTh}`} /> : <><span className="viewfinder-grid" /><b>{detail.abbreviation || detail.recommendedLenses[0]}</b></>}</div><div className="detail-copy"><span className="kicker">{categoryLabels[detail.category].en}</span><h2 id="detail-title">{detail.titleEn}</h2><h3>{detail.titleTh}</h3><p>{detail.descriptionTh}</p><dl><div><dt>ใช้เมื่อ</dt><dd>{detail.useCasesTh}</dd></div><div><dt>ผลต่อภาพ</dt><dd>{detail.effectTh}</dd></div><div><dt>Lens</dt><dd>{detail.recommendedLenses.join(", ") || "เลือกตามบริบท"}</dd></div><div><dt>ระวัง</dt><dd>{detail.warningsTh}</dd></div></dl><code>{detail.genericImagePrompt}</code><button className="primary-button" onClick={() => { addToPrompt(detail); setDetail(null); }}><Plus size={16} /> เพิ่มเข้า Prompt Lab</button></div></section></div>}
 
-      {showNew && <div className="modal-backdrop" role="presentation"><form className="new-dialog" role="dialog" aria-modal="true" aria-labelledby="new-title" onSubmit={(event) => { event.preventDefault(); void createTechnique(event.currentTarget); }}>
+      {isOwner && showNew && <div className="modal-backdrop" role="presentation"><form className="new-dialog" role="dialog" aria-modal="true" aria-labelledby="new-title" onSubmit={(event) => { event.preventDefault(); void createTechnique(event.currentTarget); }}>
         <button type="button" className="dialog-close" onClick={() => { setShowNew(false); setEditing(null); }} aria-label="ปิด"><X /></button>
         <span className="kicker">CUSTOM REFERENCE</span><h2 id="new-title">{editing ? "แก้ไขมุมภาพ" : "เพิ่มมุมภาพของคุณ"}</h2>
         <div className="field-grid"><label className="field"><span>ชื่ออังกฤษ</span><input name="titleEn" required placeholder="Push In Reveal" defaultValue={editing?.titleEn} /></label><label className="field"><span>ชื่อไทย</span><input name="titleTh" required placeholder="ดันกล้องเข้าเพื่อเปิดเผย" defaultValue={editing?.titleTh} /></label></div>
@@ -403,7 +561,7 @@ export function FrameCraftApp({ initialTechniques = starterTechniques, persisten
         <label className="field"><span>คำอธิบาย</span><textarea name="descriptionTh" rows={3} required defaultValue={editing?.descriptionTh} /></label>
         <label className="field"><span>Prompt Keywords</span><input name="prompt" required placeholder="slow push in, controlled reveal" defaultValue={editing?.genericImagePrompt} /></label>
         <label className="field"><span>Video Reference URL (ถ้ามี)</span><input name="videoReferenceUrl" type="url" placeholder="https://vimeo.com/..." defaultValue={editing?.videoReferenceUrl} /></label>
-        <label className="field"><span>{editing ? "เปลี่ยนภาพอ้างอิง" : "ภาพอ้างอิง"} (JPG, PNG, WebP ไม่เกิน 12 MB)</span><input name="media" type="file" accept="image/jpeg,image/png,image/webp" /></label>
+        <label className="field"><span>{editing ? "เปลี่ยนภาพอ้างอิง" : "ภาพอ้างอิง"} (JPG, PNG, WebP ไม่เกิน 10 MB)</span><input name="media" type="file" accept="image/jpeg,image/png,image/webp" /></label>
         <button className="primary-button" type="submit">{editing ? "บันทึกการแก้ไข" : "บันทึกเทคนิค"}</button>
       </form></div>}
       {notice && <div className="toast" role="status" aria-live="polite">{notice}</div>}

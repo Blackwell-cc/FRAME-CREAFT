@@ -2,10 +2,14 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type {
   CloudMediaRepository,
   CloudMediaRow,
+  CloudFavoriteRow,
   CloudSavedPromptRow,
+  CloudSettingsRow,
   CloudTechniqueRow,
   OwnerTechniqueRepository,
   PrivatePromptRepository,
+  PrivateFavoritesRepository,
+  PrivateSettingsRepository,
   SyncApplyResult,
 } from "./contracts";
 import {
@@ -13,11 +17,14 @@ import {
   fromCloudTechnique,
   toCloudMedia,
   toCloudSavedPrompt,
+  toCloudSettings,
   toCloudTechnique,
+  fromCloudSettings,
 } from "./mappers";
 
 interface SupabaseFailure {
   code?: string;
+  message?: string;
 }
 
 export class CloudRepositoryError extends Error {
@@ -208,7 +215,71 @@ export function createCloudRepositories(client: SupabaseClient | null) {
       });
       return { record: cloudRecord, sync };
     },
+    async remove(record, ownerUserId, baseVersion, operationId) {
+      const extension = extensionForMimeType(record.mimeType);
+      const storagePath = `${ownerUserId}/${record.techniqueId}/${record.id}.${extension}`;
+      const sync = await applyOperation(client, {
+        operationId,
+        entity: "media",
+        entityId: record.id,
+        action: "delete",
+        baseVersion,
+        payload: {},
+      });
+      if (sync.status === "applied") {
+        const { error } = await client.storage.from("technique-images").remove([storagePath]);
+        throwIfError("media.remove", error);
+      }
+      return sync;
+    },
   };
 
-  return { techniques, prompts, media };
+  const favorites: PrivateFavoritesRepository = {
+    async listMine() {
+      const { data, error } = await client.from("favorites").select("*");
+      throwIfError("favorites.listMine", error);
+      return (data ?? []) as CloudFavoriteRow[];
+    },
+    saveMine(favorite, operationId) {
+      return applyOperation(client, {
+        operationId,
+        entity: "favorite",
+        entityId: favorite.entity_id,
+        action: "upsert",
+        baseVersion: null,
+        payload: favorite,
+      });
+    },
+    removeMine(entityType, entityId, operationId) {
+      return applyOperation(client, {
+        operationId,
+        entity: "favorite",
+        entityId,
+        action: "delete",
+        baseVersion: null,
+        payload: { entity_type: entityType },
+      });
+    },
+  };
+
+  const settings: PrivateSettingsRepository = {
+    async getMine() {
+      const { data, error } = await client.from("user_settings").select("*").maybeSingle();
+      throwIfError("settings.getMine", error);
+      return data ? fromCloudSettings(data as CloudSettingsRow) : null;
+    },
+    async saveMine(record, baseVersion, operationId) {
+      const userId = await getAuthenticatedUserId(client);
+      return applyOperation(client, {
+        operationId,
+        entity: "settings",
+        entityId: userId,
+        action: "upsert",
+        baseVersion,
+        payload: toCloudSettings(record, userId),
+      });
+    },
+  };
+
+  return { techniques, prompts, media, favorites, settings };
 }

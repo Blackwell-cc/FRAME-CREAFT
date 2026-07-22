@@ -5,6 +5,16 @@ import { FrameCraftApp } from "../app/framecraft/FrameCraftApp";
 import { starterTechniques } from "../app/framecraft/seed-data";
 
 describe("FRAME / CRAFT application", () => {
+  it("keeps all library mutation controls hidden from anonymous visitors", () => {
+    render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
+
+    expect(screen.queryByRole("button", { name: "จัดการคลัง" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /เพิ่มมุมภาพ/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /เพิ่มเทคนิค/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /คัดลอก Prompt ของ Close-Up/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /เพิ่ม Close-Up เข้า Prompt/ })).toBeInTheDocument();
+  });
+
   it("organizes the library into seven searchable production chapters", async () => {
     const user = userEvent.setup();
     render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
@@ -64,8 +74,7 @@ describe("FRAME / CRAFT application", () => {
     });
     render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
 
-    const navigation = screen.getAllByRole("navigation")[0];
-    await user.click(within(navigation).getAllByRole("button")[3]);
+    await user.click(screen.getByRole("button", { name: "ตั้งค่าและสำรอง" }));
     await user.click(screen.getByRole("button", { name: "FRAME / CRAFT Home" }));
 
     expect(screen.getByRole("searchbox")).toBeInTheDocument();

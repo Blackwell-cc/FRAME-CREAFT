@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { OwnerAuthPanel } from "../app/framecraft/OwnerAuthPanel";
 import { SyncStatus } from "../app/framecraft/SyncStatus";
+import { FrameCraftApp } from "../app/framecraft/FrameCraftApp";
+import { starterTechniques } from "../app/framecraft/seed-data";
 import type { AuthRepository, OwnerSession } from "../app/framecraft/cloud/contracts";
 
 function createRepository(session: OwnerSession): AuthRepository {
@@ -95,5 +97,20 @@ describe("sync status", () => {
 
     expect(screen.getByText(label)).toBeInTheDocument();
     expect(screen.getByText("รอซิงก์ 2 รายการ")).toBeInTheDocument();
+  });
+});
+
+describe("owner-managed application controls", () => {
+  it("reveals management controls only in an owner session", () => {
+    render(
+      <FrameCraftApp
+        initialTechniques={starterTechniques}
+        persistence="memory"
+        initialOwnerSession={{ state: "owner", userId: "owner-id", email: "owner@example.com" }}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "จัดการคลัง" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /เพิ่มมุมภาพ/ })).toBeInTheDocument();
   });
 });

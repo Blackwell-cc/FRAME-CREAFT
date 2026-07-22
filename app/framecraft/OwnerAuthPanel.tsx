@@ -7,16 +7,20 @@ interface OwnerAuthPanelProps {
   repository: AuthRepository;
   initialSession?: OwnerSession;
   origin: string;
+  onSessionChange?: (session: OwnerSession) => void;
 }
 
-export function OwnerAuthPanel({ repository, initialSession = { state: "signed-out" }, origin }: OwnerAuthPanelProps) {
+export function OwnerAuthPanel({ repository, initialSession = { state: "signed-out" }, origin, onSessionChange }: OwnerAuthPanelProps) {
   const [session, setSession] = useState<OwnerSession>(initialSession);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => repository.subscribe(setSession), [repository]);
+  useEffect(() => repository.subscribe((next) => {
+    setSession(next);
+    onSessionChange?.(next);
+  }), [onSessionChange, repository]);
 
   async function handleSignIn(event: FormEvent) {
     event.preventDefault();
@@ -27,7 +31,9 @@ export function OwnerAuthPanel({ repository, initialSession = { state: "signed-o
     setBusy(true);
     setMessage("");
     try {
-      setSession(await repository.signIn(email.trim(), password));
+      const next = await repository.signIn(email.trim(), password);
+      setSession(next);
+      onSessionChange?.(next);
     } catch {
       setMessage("เข้าสู่ระบบไม่สำเร็จ กรุณาตรวจสอบข้อมูลอีกครั้ง");
     } finally {
@@ -55,6 +61,7 @@ export function OwnerAuthPanel({ repository, initialSession = { state: "signed-o
   async function handleSignOut() {
     await repository.signOut();
     setSession({ state: "signed-out" });
+    onSessionChange?.({ state: "signed-out" });
   }
 
   if (session.state === "owner") {

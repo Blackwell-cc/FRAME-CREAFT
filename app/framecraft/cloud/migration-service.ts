@@ -43,6 +43,7 @@ interface MigrationDependencies {
   deliverBackup(bytes: Uint8Array): Promise<void>;
   uploadMedia(record: MediaRecord, storagePath: string): Promise<void>;
   upsertTechnique(record: Technique): Promise<void>;
+  upsertMedia(record: MediaRecord, storagePath: string): Promise<void>;
   upsertPrompt(record: SavedPrompt, userId: string): Promise<void>;
   saveSettings(record: AppSettings, userId: string): Promise<void>;
   readBack(): Promise<ReadBackResult>;
@@ -124,6 +125,10 @@ export function createMigrationService(dependencies: MigrationDependencies) {
       await dependencies.metadata.save("migration-phase", "uploading-records");
       for (const record of source.techniques) {
         await dependencies.upsertTechnique(record);
+      }
+      for (const record of source.media) {
+        const storagePath = `${dependencies.ownerUserId}/${record.techniqueId}/${record.id}.${extensionFor(record.mimeType)}`;
+        await dependencies.upsertMedia(record, storagePath);
       }
       for (const record of source.prompts) {
         await dependencies.upsertPrompt(record, dependencies.ownerUserId);

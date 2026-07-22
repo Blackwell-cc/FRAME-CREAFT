@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { starterTechniques } from "../app/framecraft/seed-data";
 import {
   createFrameCraftDb,
+  createOwnerMutationRepository,
   createSyncQueueRepository,
 } from "../app/framecraft/storage";
 import type {
@@ -110,6 +111,32 @@ describe("offline sync storage", () => {
       earliest.operationId,
       latest.operationId,
     ]);
+    db.close();
+    await Dexie.delete(db.name);
+  });
+
+  it("stores private owner changes together with their cloud operations", async () => {
+    const db = createFrameCraftDb(`framecraft-owner-${crypto.randomUUID()}`);
+    const mutations = createOwnerMutationRepository(db);
+    const queue = queueRecord(
+      "44444444-4444-4444-8444-444444444444",
+      "2026-07-21T03:00:00.000Z",
+    );
+    const favorite = {
+      id: `${queue.userId}:technique:shot-close-up`,
+      userId: queue.userId,
+      entityType: "technique" as const,
+      entityId: "shot-close-up",
+      createdAt: queue.createdAt,
+    };
+
+    await mutations.saveFavorite(favorite, { ...queue, entity: "favorite", payload: favorite });
+
+    await expect(db.favorites.get(favorite.id)).resolves.toEqual(favorite);
+    await expect(db.syncQueue.get(queue.operationId)).resolves.toMatchObject({
+      entity: "favorite",
+      entityId: "shot-close-up",
+    });
     db.close();
     await Dexie.delete(db.name);
   });

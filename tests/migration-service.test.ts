@@ -54,13 +54,14 @@ function createHarness(verifyMatches = true) {
       events.push("backup");
       return new Uint8Array([1, 2, 3]);
     },
-    deliverBackup: async () => events.push("deliver-backup"),
+    deliverBackup: async () => { events.push("deliver-backup"); },
     uploadMedia: async (record, storagePath) => {
       events.push(`media:${record.id}:${storagePath}`);
     },
-    upsertTechnique: async (record) => events.push(`technique:${record.id}`),
-    upsertPrompt: async (record, userId) => events.push(`prompt:${record.id}:${userId}`),
-    saveSettings: async (_record, userId) => events.push(`settings:${userId}`),
+    upsertMedia: async (record) => { events.push(`media-row:${record.id}`); },
+    upsertTechnique: async (record) => { events.push(`technique:${record.id}`); },
+    upsertPrompt: async (record, userId) => { events.push(`prompt:${record.id}:${userId}`); },
+    saveSettings: async (_record, userId) => { events.push(`settings:${userId}`); },
     readBack: async () => ({
       techniqueIds: verifyMatches ? [technique.id] : [],
       promptIds: [prompt.id],
@@ -102,6 +103,9 @@ describe("cloud migration service", () => {
     expect(harness.events).toContain(`technique:${technique.id}`);
     expect(harness.events).toContain(
       "media:media-close-up:11111111-1111-4111-8111-111111111111/shot-close-up/media-close-up.webp",
+    );
+    expect(harness.events.indexOf(`technique:${technique.id}`)).toBeLessThan(
+      harness.events.indexOf(`media-row:${media.id}`),
     );
     expect(harness.events).toContain(
       "prompt:prompt-1:11111111-1111-4111-8111-111111111111",
