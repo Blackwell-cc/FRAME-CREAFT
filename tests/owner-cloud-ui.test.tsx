@@ -6,6 +6,24 @@ import { SyncStatus } from "../app/framecraft/SyncStatus";
 import { FrameCraftApp } from "../app/framecraft/FrameCraftApp";
 import { starterTechniques } from "../app/framecraft/seed-data";
 import type { AuthRepository, OwnerSession } from "../app/framecraft/cloud/contracts";
+import type { AiOptimizeResult } from "../app/framecraft/ai-optimizer";
+
+const aiResultFixture: AiOptimizeResult = {
+  optimizedPrompt: "A refined cinematic close-up of a director reviewing a monitor.",
+  improvements: ["Clarified the subject and action."],
+  warnings: [],
+  shotBreakdown: [],
+  model: "gemini-test",
+  optimizedAt: "2026-07-22T00:00:00.000Z",
+};
+
+function aiRuntime(analyze: ReturnType<typeof vi.fn>) {
+  return {
+    ai: { analyze },
+    migration: vi.fn().mockReturnValue(null),
+    loadOwner: vi.fn().mockResolvedValue({ prompts: [], favorites: [], settings: null }),
+  } as never;
+}
 
 function createRepository(session: OwnerSession): AuthRepository {
   return {
@@ -101,6 +119,54 @@ describe("sync status", () => {
 });
 
 describe("owner-managed application controls", () => {
+  it("hides AI controls from anonymous users", () => {
+    render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
+    expect(screen.queryByRole("button", { name: "วิเคราะห์ด้วย AI" })).not.toBeInTheDocument();
+  });
+
+  it("previews without overwriting and applies only after confirmation", async () => {
+    const user = userEvent.setup();
+    const analyze = vi.fn().mockResolvedValue(aiResultFixture);
+    render(
+      <FrameCraftApp
+        initialTechniques={starterTechniques}
+        persistence="memory"
+        initialOwnerSession={{ state: "owner", userId: "owner-id", email: "owner@example.com" }}
+        cloudRuntime={aiRuntime(analyze)}
+      />,
+    );
+    const output = screen.getByLabelText("Generated prompt");
+    const original = (output as HTMLTextAreaElement).value;
+
+    await user.click(screen.getByRole("button", { name: "วิเคราะห์ด้วย AI" }));
+    expect(await screen.findByRole("dialog", { name: "AI Prompt Preview" }))
+      .toHaveTextContent(aiResultFixture.optimizedPrompt);
+    expect(output).toHaveValue(original);
+
+    await user.click(screen.getByRole("button", { name: "ใช้ผลลัพธ์นี้" }));
+    expect(output).toHaveValue(aiResultFixture.optimizedPrompt);
+    expect(screen.getByText("AI Applied")).toBeInTheDocument();
+  });
+
+  it("keeps the local prompt byte-for-byte when AI fails", async () => {
+    const user = userEvent.setup();
+    render(
+      <FrameCraftApp
+        initialTechniques={starterTechniques}
+        persistence="memory"
+        initialOwnerSession={{ state: "owner", userId: "owner-id", email: "owner@example.com" }}
+        cloudRuntime={aiRuntime(vi.fn().mockRejectedValue({ code: "rate-limit" }))}
+      />,
+    );
+    const output = screen.getByLabelText("Generated prompt");
+    await user.type(output, "local draft");
+
+    await user.click(screen.getByRole("button", { name: "วิเคราะห์ด้วย AI" }));
+
+    expect(output).toHaveValue("local draft");
+    expect(await screen.findByRole("alert")).toHaveTextContent("ใช้งานครบโควตาชั่วคราว");
+  });
+
   it("reveals management controls only in an owner session", () => {
     render(
       <FrameCraftApp

@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Archive, BookOpen, Download, Heart, Languages, Menu, Plus, Search, Settings, Sparkles, Upload, Video, X } from "lucide-react";
 import { createBackupArchive, inspectBackupArchive } from "./backup-service";
+import { AiPromptPreview } from "./AiPromptPreview";
+import type { AiOptimizeResult, AiOptimizerErrorCode } from "./ai-optimizer";
 import { categoryOrder } from "./category-guides";
 import { CategorySection } from "./CategorySection";
 import { ChapterNav } from "./ChapterNav";
@@ -72,6 +74,9 @@ export function FrameCraftApp({
   const [promptSession, setPromptSession] = useState(
     () => createPromptSession(composition.prompt),
   );
+  const [aiStatus, setAiStatus] = useState<"idle" | "loading" | "preview" | "error">("idle");
+  const [aiPreview, setAiPreview] = useState<AiOptimizeResult | null>(null);
+  const [aiError, setAiError] = useState("");
   const [selectionWarning, setSelectionWarning] = useState("");
   const [detail, setDetail] = useState<Technique | null>(null);
   const [notice, setNotice] = useState("");
@@ -430,6 +435,65 @@ export function FrameCraftApp({
     ));
   }
 
+  function aiErrorMessage(code: AiOptimizerErrorCode | undefined) {
+    const messages: Record<AiOptimizerErrorCode, string> = {
+      unauthorized: "Session หมดอายุ กรุณาเข้าสู่ระบบ Owner ใหม่",
+      forbidden: "บัญชีนี้ไม่มีสิทธิ์ใช้ AI Optimizer",
+      "rate-limit": "ใช้งานครบโควตาชั่วคราว กรุณารอสักครู่แล้วลองใหม่",
+      timeout: "AI ใช้เวลานานเกินกำหนด Prompt เดิมของคุณยังไม่เปลี่ยนแปลง",
+      "invalid-response": "ผลลัพธ์จาก AI ไม่อยู่ในรูปแบบที่ปลอดภัย จึงยังไม่ได้นำมาใช้",
+      unavailable: "AI Optimizer ยังไม่พร้อมใช้งาน กรุณาตรวจสอบการตั้งค่า Edge Function",
+    };
+    return code ? messages[code] : messages.unavailable;
+  }
+
+  async function analyzeWithAi() {
+    if (!isOwner || !runtime?.ai || aiStatus === "loading") return;
+    setAiStatus("loading");
+    setAiError("");
+    setAiPreview(null);
+    try {
+      const result = await runtime.ai.analyze({
+        input: promptInput,
+        selected: selected.map((technique) => ({
+          id: technique.id,
+          category: technique.category,
+          titleEn: technique.titleEn,
+          titleTh: technique.titleTh,
+          imageKeywords: technique.imageKeywords,
+          videoKeywords: technique.videoKeywords,
+        })),
+        composition,
+        platform: promptInput.platform,
+        outputLanguage,
+      });
+      setAiPreview(result);
+      setAiStatus("preview");
+    } catch (error) {
+      const code = error && typeof error === "object" && "code" in error
+        ? error.code as AiOptimizerErrorCode
+        : undefined;
+      setAiError(aiErrorMessage(code));
+      setAiStatus("error");
+    }
+  }
+
+  function applyAiPreview() {
+    if (!aiPreview) return;
+    setPromptSession((current) => applyAiPrompt(current, aiPreview.optimizedPrompt, {
+      model: aiPreview.model,
+      optimizedAt: aiPreview.optimizedAt,
+    }));
+    setAiPreview(null);
+    setAiStatus("idle");
+    setAiError("");
+  }
+
+  function cancelAiPreview() {
+    setAiPreview(null);
+    setAiStatus("idle");
+  }
+
   function savePrompt() {
     const now = new Date().toISOString();
     const record: SavedPromptV2 = {
@@ -698,10 +762,12 @@ export function FrameCraftApp({
           </div>
         </section>}
 
-        {view === "prompt" && <div className="mobile-prompt-view"><PromptPanel input={promptInput} selected={selected} composition={composition} session={promptSession} outputLanguage={outputLanguage} selectionWarning={selectionWarning} onFieldChange={changePromptField} onModeChange={changePromptMode} onLanguageChange={changeOutputLanguage} onOutputEdit={(value) => setPromptSession((current) => editPrompt(current, value))} onRegenerate={() => setPromptSession((current) => replaceWithAutomaticPrompt(current, current.automaticPrompt))} onRemove={removeFromPrompt} onReset={resetPrompt} onSave={savePrompt} /></div>}
+        {view === "prompt" && <div className="mobile-prompt-view"><PromptPanel input={promptInput} selected={selected} composition={composition} session={promptSession} outputLanguage={outputLanguage} selectionWarning={selectionWarning} onFieldChange={changePromptField} onModeChange={changePromptMode} onLanguageChange={changeOutputLanguage} onOutputEdit={(value) => setPromptSession((current) => editPrompt(current, value))} onRegenerate={() => setPromptSession((current) => replaceWithAutomaticPrompt(current, current.automaticPrompt))} onRemove={removeFromPrompt} onReset={resetPrompt} onSave={savePrompt} canUseAi={isOwner && Boolean(runtime?.ai)} aiStatus={aiStatus} aiError={aiError} onAnalyze={() => void analyzeWithAi()} /></div>}
       </main>
 
-      <PromptPanel compact input={promptInput} selected={selected} composition={composition} session={promptSession} outputLanguage={outputLanguage} selectionWarning={selectionWarning} onFieldChange={changePromptField} onModeChange={changePromptMode} onLanguageChange={changeOutputLanguage} onOutputEdit={(value) => setPromptSession((current) => editPrompt(current, value))} onRegenerate={() => setPromptSession((current) => replaceWithAutomaticPrompt(current, current.automaticPrompt))} onRemove={removeFromPrompt} onReset={resetPrompt} onSave={savePrompt} />
+      <PromptPanel compact input={promptInput} selected={selected} composition={composition} session={promptSession} outputLanguage={outputLanguage} selectionWarning={selectionWarning} onFieldChange={changePromptField} onModeChange={changePromptMode} onLanguageChange={changeOutputLanguage} onOutputEdit={(value) => setPromptSession((current) => editPrompt(current, value))} onRegenerate={() => setPromptSession((current) => replaceWithAutomaticPrompt(current, current.automaticPrompt))} onRemove={removeFromPrompt} onReset={resetPrompt} onSave={savePrompt} canUseAi={isOwner && Boolean(runtime?.ai)} aiStatus={aiStatus} aiError={aiError} onAnalyze={() => void analyzeWithAi()} />
+
+      {aiPreview ? <AiPromptPreview result={aiPreview} onApply={applyAiPreview} onCancel={cancelAiPreview} /> : null}
 
       {detail && <div className="modal-backdrop" role="presentation" onMouseDown={() => setDetail(null)}><section className="detail-dialog" role="dialog" aria-modal="true" aria-labelledby="detail-title" onMouseDown={(event) => event.stopPropagation()}><button className="dialog-close" onClick={() => setDetail(null)} aria-label="ปิดรายละเอียด"><X /></button><div className="detail-visual" data-category={detail.category}>{detailImageUrl ? <img /* eslint-disable-line @next/next/no-img-element */ className={detail.id === "shot-close-up" ? "natural-color-reference" : undefined} src={detailImageUrl} alt={`ภาพอ้างอิง ${detail.titleTh}`} /> : <><span className="viewfinder-grid" /><b>{detail.abbreviation || detail.recommendedLenses[0]}</b></>}</div><div className="detail-copy"><span className="kicker">{categoryLabels[detail.category].en}</span><h2 id="detail-title">{detail.titleEn}</h2><h3>{detail.titleTh}</h3><p>{detail.descriptionTh}</p><dl><div><dt>ใช้เมื่อ</dt><dd>{detail.useCasesTh}</dd></div><div><dt>ผลต่อภาพ</dt><dd>{detail.effectTh}</dd></div><div><dt>Lens</dt><dd>{detail.recommendedLenses.join(", ") || "เลือกตามบริบท"}</dd></div><div><dt>ระวัง</dt><dd>{detail.warningsTh}</dd></div></dl><code>{detail.genericImagePrompt}</code><button className="primary-button" onClick={() => { addToPrompt(detail); setDetail(null); }}><Plus size={16} /> เพิ่มเข้า Prompt Lab</button></div></section></div>}
 

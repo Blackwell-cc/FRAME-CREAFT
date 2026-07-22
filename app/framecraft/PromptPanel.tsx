@@ -1,4 +1,4 @@
-import { Check, RotateCcw, Save, X } from "lucide-react";
+import { Check, RotateCcw, Save, Sparkles, X } from "lucide-react";
 import { CopyButton } from "./CopyButton";
 import { platformPresets } from "./prompt-composer";
 import type { PromptSession } from "./prompt-session";
@@ -26,6 +26,10 @@ interface PromptPanelProps {
   onRemove: (id: string) => void;
   onReset: () => void;
   onSave: () => void;
+  canUseAi: boolean;
+  aiStatus: "idle" | "loading" | "preview" | "error";
+  aiError: string;
+  onAnalyze: () => void;
   compact?: boolean;
 }
 
@@ -50,6 +54,10 @@ export function PromptPanel({
   onRemove,
   onReset,
   onSave,
+  canUseAi,
+  aiStatus,
+  aiError,
+  onAnalyze,
   compact,
 }: PromptPanelProps) {
   const presets = platformPresets.filter((preset) => preset.mode === input.mode);
@@ -277,6 +285,22 @@ export function PromptPanel({
           </button>
         </div>
       ) : null}
+
+      {canUseAi ? (
+        <div className="ai-analyze">
+          <button
+            type="button"
+            className="ai-analyze__button"
+            disabled={aiStatus === "loading"}
+            onClick={onAnalyze}
+          >
+            <Sparkles size={15} />
+            {aiStatus === "loading" ? "กำลังวิเคราะห์..." : "วิเคราะห์ด้วย AI"}
+          </button>
+          <small>AI จะสร้าง Preview ก่อน และยังไม่แก้ Prompt จนกว่าคุณจะยืนยัน</small>
+        </div>
+      ) : null}
+      {aiError ? <p className="ai-error" role="alert">{aiError}</p> : null}
 
       <div className="prompt-actions">
         <CopyButton
