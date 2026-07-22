@@ -43,9 +43,9 @@ const settings: AppSettings = {
   updatedAt: now,
 };
 
-function createHarness(verifyMatches = true) {
+function createHarness(verifyMatches = true, initialMetadata: Record<string, unknown> = {}) {
   const events: string[] = [];
-  const metadata = new Map<string, unknown>();
+  const metadata = new Map<string, unknown>(Object.entries(initialMetadata));
   const local = { techniques: [technique], prompts: [prompt], media: [media], settings };
   const service = createMigrationService({
     ownerUserId: "11111111-1111-4111-8111-111111111111",
@@ -130,5 +130,13 @@ describe("cloud migration service", () => {
 
     await expect(harness.service.resumeMigration()).resolves.toMatchObject({ phase: "complete" });
     expect(harness.events).toHaveLength(callsAfterFirstRun);
+  });
+
+  it("reruns an older completed migration until the current migration version is verified", async () => {
+    const harness = createHarness(true, { "migration-complete": true });
+
+    await expect(harness.service.inspectMigration()).resolves.toMatchObject({ phase: "backup-required" });
+    await expect(harness.service.runMigration({ backupConfirmed: true })).resolves.toMatchObject({ phase: "complete" });
+    expect(harness.metadata.get("migration-version")).toBe(2);
   });
 });

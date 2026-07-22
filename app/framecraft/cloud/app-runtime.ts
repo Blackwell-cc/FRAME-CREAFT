@@ -15,6 +15,7 @@ import { readCloudConfig } from "./config";
 import { toCloudMedia, toCloudSavedPrompt, toCloudSettings, toCloudTechnique } from "./mappers";
 import { createMigrationService } from "./migration-service";
 import { createCloudRepositories } from "./repositories";
+import { ensureStarterCloudMedia } from "./starter-cloud-media";
 
 function throwFailure(error: { message?: string } | null) {
   if (error) throw new Error(error.message || "Supabase operation failed");
@@ -136,7 +137,16 @@ function createMigrationBoundary(client: SupabaseClient, ownerUserId: string) {
       const [techniques, prompts, media, settings] = await Promise.all([
         techniqueRepository.list(), promptRepository.list(), mediaRepository.list(), settingsRepository.get(),
       ]);
-      return { techniques, prompts, media, settings: settings ?? null };
+      const cloudMedia = await ensureStarterCloudMedia(
+        media,
+        async (path) => {
+          const response = await fetch(path);
+          if (!response.ok) throw new Error("ไม่สามารถเตรียมภาพ Close-Up สำหรับ Cloud ได้");
+          return response.blob();
+        },
+        readImageDimensions,
+      );
+      return { techniques, prompts, media: cloudMedia, settings: settings ?? null };
     },
     createBackup: ({ techniques, prompts, media, settings }) => createBackupArchive({ techniques, prompts, media, settings }),
     deliverBackup: async (bytes) => download(bytes),

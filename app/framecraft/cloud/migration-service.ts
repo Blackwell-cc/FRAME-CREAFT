@@ -57,6 +57,8 @@ export interface MigrationReport {
   errorCode?: "READ_BACK_MISMATCH" | "MIGRATION_FAILED";
 }
 
+const currentMigrationVersion = 2;
+
 function countsFor(source: MigrationSource): MigrationCounts {
   return {
     techniques: source.techniques.length,
@@ -85,9 +87,9 @@ class ReadBackMismatchError extends Error {}
 export function createMigrationService(dependencies: MigrationDependencies) {
   async function inspectMigration(): Promise<MigrationReport> {
     const source = await dependencies.loadLocal();
-    const complete = await dependencies.metadata.get("migration-complete");
+    const complete = await dependencies.metadata.get("migration-version");
     return {
-      phase: complete === true ? "complete" : "backup-required",
+      phase: complete === currentMigrationVersion ? "complete" : "backup-required",
       counts: countsFor(source),
     };
   }
@@ -106,7 +108,7 @@ export function createMigrationService(dependencies: MigrationDependencies) {
   async function runMigration(options: { backupConfirmed: boolean }): Promise<MigrationReport> {
     const source = await dependencies.loadLocal();
     const counts = countsFor(source);
-    if ((await dependencies.metadata.get("migration-complete")) === true) {
+    if ((await dependencies.metadata.get("migration-version")) === currentMigrationVersion) {
       return { phase: "complete", counts };
     }
     if (!options.backupConfirmed) return { phase: "backup-required", counts };
@@ -140,6 +142,7 @@ export function createMigrationService(dependencies: MigrationDependencies) {
       await dependencies.metadata.save("migration-phase", "verifying");
       await verifyMigration(source);
       await dependencies.metadata.save("migration-complete", true);
+      await dependencies.metadata.save("migration-version", currentMigrationVersion);
       await dependencies.metadata.save("migration-completed-at", dependencies.now());
       await dependencies.metadata.save("migration-phase", "complete");
       return { phase: "complete", counts };
