@@ -16,7 +16,7 @@ interface PromptPanelProps {
 }
 
 export function PromptPanel({ input, selected, outputOverride, onInput, onOutput, onRemove, onReset, onSave, compact }: PromptPanelProps) {
-  const generated = composePrompt(input);
+  const generated = composePrompt({ input, selected, outputLanguage: "en" });
   const output = outputOverride || generated.prompt;
   const presets = platformPresets.filter((preset) => preset.mode === input.mode);
 

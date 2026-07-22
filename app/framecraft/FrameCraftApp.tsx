@@ -33,7 +33,7 @@ interface FrameCraftAppProps {
 const emptyPrompt: PromptInput = {
   mode: "image", platform: "generic-image", subject: "", action: "", environment: "",
   shotSize: "", angle: "", lens: "", movement: "", lighting: "", composition: "",
-  mood: "deep monochrome color grade, subtle film grain", aspectRatio: "16:9", duration: "", pacing: "",
+  mood: "", aspectRatio: "16:9", duration: "", pacing: "",
 };
 
 const defaultSettings: AppSettings = {
@@ -318,7 +318,7 @@ export function FrameCraftApp({
 
   function savePrompt() {
     const now = new Date().toISOString();
-    const generated = composePrompt(promptInput).prompt;
+    const generated = composePrompt({ input: promptInput, selected, outputLanguage: "en" }).prompt;
     const record: SavedPrompt = {
       id: crypto.randomUUID(),
       name: promptInput.subject.trim() || `Untitled ${promptInput.mode} prompt`,

@@ -71,6 +71,25 @@ export interface PromptOutput {
   negativePrompt: string;
 }
 
+export interface ShotBreakdown {
+  index: number;
+  shotSize: Technique | null;
+  techniques: Technique[];
+  transition: "opening" | "then" | "meanwhile" | "finally";
+  prompt: string;
+}
+
+export interface PromptComposition extends PromptOutput {
+  warnings: string[];
+  shots: ShotBreakdown[];
+}
+
+export interface ComposePromptRequest {
+  input: PromptInput;
+  selected: Technique[];
+  outputLanguage: OutputLanguage;
+}
+
 export interface SavedPrompt {
   id: string;
   name: string;

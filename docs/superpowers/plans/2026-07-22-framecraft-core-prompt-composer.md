@@ -169,7 +169,7 @@ expect(composePrompt({ ...request, input: { ...request.input, mode: "image" }, s
   .toContain("Subject: a director; Action: reviews a monitor; Environment: in a studio");
 expect(composePrompt({ ...request, input: { ...request.input, mode: "video", duration: "8" } }).prompt)
   .toContain("Duration: 8 seconds.");
-expect(composePrompt(request).shots.map((shot) => shot.shotSize?.id)).toEqual(["shot-close-up", "shot-wide"]);
+expect(composePrompt(request).shots.map((shot) => shot.shotSize?.id)).toEqual(["shot-close-up", "shot-wide-shot"]);
 expect(composePrompt({ ...request, outputLanguage: "th" }).prompt).toContain("ระยะเวลา: 8 วินาที");
 expect(validateDuration("0")).toEqual({ valid: false, messageTh: "กรอกระยะเวลา 1–600 วินาที" });
 expect(composePrompt({ ...request, input: { ...request.input, subject: "" } }).warnings).toContain("missing-subject");
