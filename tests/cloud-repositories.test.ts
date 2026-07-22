@@ -6,6 +6,7 @@ import {
   createCloudRepositories,
 } from "../app/framecraft/cloud/repositories";
 import type { SavedPrompt } from "../app/framecraft/types";
+import { upgradeSavedPrompt } from "../app/framecraft/saved-prompt-schema";
 
 function createScriptedClient(
   script: Record<string, { data: unknown; error: unknown }>,
@@ -148,7 +149,7 @@ describe("cloud repositories", () => {
 
     await expect(
       createCloudRepositories(scripted.client as never)?.prompts.listMine(),
-    ).resolves.toEqual([prompt]);
+    ).resolves.toEqual([upgradeSavedPrompt(prompt)]);
     expect(scripted.calls).toContainEqual(["from", "saved_prompts"]);
   });
 

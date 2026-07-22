@@ -9,12 +9,13 @@ import { ChapterNav } from "./ChapterNav";
 import { readImageDimensions, validateMediaFile, validateVideoReferenceUrl } from "./media-service";
 import { composePrompt } from "./prompt-composer";
 import { reconcileSelectionForMode, validateTechniqueSelection } from "./prompt-selection";
-import { createPromptSession, editPrompt, markPromptStale, replaceWithAutomaticPrompt, updateAutomaticCandidate } from "./prompt-session";
+import { applyAiPrompt, createPromptSession, editPrompt, markPromptStale, replaceWithAutomaticPrompt, updateAutomaticCandidate } from "./prompt-session";
 import { PromptPanel } from "./PromptPanel";
 import { categoryLabels, starterTechniques } from "./seed-data";
 import { starterMediaUrls } from "./starter-media";
 import { frameCraftDb, mediaRepository, ownerMutationRepository, promptRepository, restoreBackup, settingsRepository, syncConflictRepository, syncMetadataRepository, syncQueueRepository, techniqueRepository } from "./storage";
-import type { AppSettings, MediaRecord, OutputLanguage, PromptInput, PromptMode, SavedPrompt, SyncEntity, SyncQueueRecord, Technique, TechniqueCategory } from "./types";
+import type { AppSettings, MediaRecord, OutputLanguage, PromptInput, PromptMode, SavedPrompt, SavedPromptV2, SyncEntity, SyncQueueRecord, Technique, TechniqueCategory } from "./types";
+import { upgradeSavedPrompt } from "./saved-prompt-schema";
 import type { OwnerSession, SyncStatusSnapshot } from "./cloud/contracts";
 import { createAppCloudRuntime, type AppCloudRuntime } from "./cloud/app-runtime";
 import { OwnerAuthPanel } from "./OwnerAuthPanel";
@@ -431,14 +432,24 @@ export function FrameCraftApp({
 
   function savePrompt() {
     const now = new Date().toISOString();
-    const record: SavedPrompt = {
+    const record: SavedPromptV2 = {
       id: crypto.randomUUID(),
+      schemaVersion: 2,
       name: promptInput.subject.trim() || `Untitled ${promptInput.mode} prompt`,
       mode: promptInput.mode,
       platform: promptInput.platform,
       input: promptInput,
       generatedPrompt: composition.prompt,
       editedPrompt: promptSession.value,
+      selectedTechniqueIds: selected.map((technique) => technique.id),
+      structuredDraft: composition,
+      outputLanguage,
+      promptState: promptSession.state === "ai-preview"
+        ? "manual"
+        : promptSession.state,
+      ...(promptSession.aiMetadata
+        ? { aiMetadata: promptSession.aiMetadata }
+        : {}),
       isFavorite: true,
       createdAt: now,
       updatedAt: now,
@@ -455,19 +466,31 @@ export function FrameCraftApp({
   }
 
   function openSavedPrompt(prompt: SavedPrompt) {
-    const automatic = composePrompt({
-      input: prompt.input,
-      selected: [],
-      outputLanguage: "en",
-    }).prompt;
+    const saved = upgradeSavedPrompt(prompt);
+    const restoredSelection = saved.selectedTechniqueIds
+      .map((id) => techniques.find((technique) => technique.id === id))
+      .filter((technique): technique is Technique => Boolean(technique));
+    const automatic = saved.structuredDraft.prompt || saved.generatedPrompt;
     const automaticSession = createPromptSession(automatic);
-    setPromptInput(prompt.input);
-    setSelected([]);
-    setOutputLanguage("en");
+    let restoredSession = automaticSession;
+    if (saved.promptState === "manual") {
+      restoredSession = editPrompt(automaticSession, saved.editedPrompt);
+    } else if (saved.promptState === "stale") {
+      restoredSession = markPromptStale(
+        editPrompt(automaticSession, saved.editedPrompt),
+        "saved-data",
+      );
+    } else if (saved.promptState === "ai-applied") {
+      restoredSession = saved.aiMetadata
+        ? applyAiPrompt(automaticSession, saved.editedPrompt, saved.aiMetadata)
+        : editPrompt(automaticSession, saved.editedPrompt);
+    }
+
+    setPromptInput(saved.input);
+    setSelected(restoredSelection);
+    setOutputLanguage(saved.outputLanguage);
     setSelectionWarning("");
-    setPromptSession(prompt.editedPrompt === prompt.generatedPrompt
-      ? automaticSession
-      : editPrompt(automaticSession, prompt.editedPrompt));
+    setPromptSession(restoredSession);
     setView("prompt");
   }
 

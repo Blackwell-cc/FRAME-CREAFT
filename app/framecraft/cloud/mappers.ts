@@ -1,4 +1,5 @@
 import type { AppSettings, MediaRecord, SavedPrompt, Technique } from "../types";
+import { upgradeSavedPrompt } from "../saved-prompt-schema";
 import type {
   CloudMediaRow,
   CloudSavedPromptRow,
@@ -76,35 +77,59 @@ export function toCloudSavedPrompt(
   record: SavedPrompt,
   userId: string,
 ): CloudSavedPromptRow {
+  const normalized = upgradeSavedPrompt(record);
   return {
-    id: record.id,
+    id: normalized.id,
     user_id: userId,
-    name: record.name,
-    mode: record.mode,
-    platform: record.platform,
-    input: { ...record.input },
-    generated_prompt: record.generatedPrompt,
-    edited_prompt: record.editedPrompt,
+    name: normalized.name,
+    mode: normalized.mode,
+    platform: normalized.platform,
+    input: {
+      ...normalized.input,
+      _framecraftV2: {
+        schemaVersion: 2,
+        selectedTechniqueIds: [...normalized.selectedTechniqueIds],
+        structuredDraft: normalized.structuredDraft,
+        outputLanguage: normalized.outputLanguage,
+        promptState: normalized.promptState,
+        aiMetadata: normalized.aiMetadata ?? null,
+      },
+    },
+    generated_prompt: normalized.generatedPrompt,
+    edited_prompt: normalized.editedPrompt,
     version: 1,
-    created_at: record.createdAt,
-    updated_at: record.updatedAt,
+    created_at: normalized.createdAt,
+    updated_at: normalized.updatedAt,
     deleted_at: null,
   };
 }
 
 export function fromCloudSavedPrompt(row: CloudSavedPromptRow): SavedPrompt {
-  return {
+  const { _framecraftV2: metadata, ...input } = row.input;
+  const legacy: SavedPrompt = {
     id: row.id,
     name: row.name,
     mode: row.mode,
     platform: row.platform,
-    input: { ...row.input },
+    input,
     generatedPrompt: row.generated_prompt,
     editedPrompt: row.edited_prompt,
     isFavorite: false,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+
+  if (metadata?.schemaVersion !== 2) return upgradeSavedPrompt(legacy);
+
+  return upgradeSavedPrompt({
+    ...legacy,
+    schemaVersion: 2,
+    selectedTechniqueIds: [...metadata.selectedTechniqueIds],
+    structuredDraft: metadata.structuredDraft,
+    outputLanguage: metadata.outputLanguage,
+    promptState: metadata.promptState,
+    ...(metadata.aiMetadata ? { aiMetadata: metadata.aiMetadata } : {}),
+  });
 }
 
 export function toCloudSettings(

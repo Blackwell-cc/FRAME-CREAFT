@@ -39,18 +39,35 @@ describe("backup service", () => {
   });
 
   it("continues to import a valid schema v1 archive", () => {
+    const legacyPrompt = {
+      id: "prompt-legacy",
+      name: "Legacy prompt",
+      mode: "image",
+      platform: "generic-image",
+      input: {
+        mode: "image", platform: "generic-image", subject: "a director",
+        action: "", environment: "", shotSize: "close-up", angle: "",
+        lens: "", movement: "", lighting: "", composition: "", mood: "",
+        aspectRatio: "16:9", duration: "", pacing: "",
+      },
+      generatedPrompt: "Close-up of a director.",
+      editedPrompt: "Edited close-up of a director.",
+      isFavorite: false,
+      createdAt: "2026-07-21T00:00:00.000Z",
+      updatedAt: "2026-07-21T00:00:00.000Z",
+    };
     const manifest = {
       app: "FRAME / CRAFT",
       appVersion: "0.1.0",
       schemaVersion: 1,
       exportedAt: "2026-07-21T00:00:00.000Z",
-      counts: { techniques: 0, prompts: 0, media: 0 },
+      counts: { techniques: 0, prompts: 1, media: 0 },
       mediaChecksums: {},
     };
     const archive = zipSync({
       "manifest.json": strToU8(JSON.stringify(manifest)),
       "techniques.json": strToU8("[]"),
-      "prompts.json": strToU8("[]"),
+      "prompts.json": strToU8(JSON.stringify([legacyPrompt])),
       "settings.json": strToU8("null"),
       "media.json": strToU8("[]"),
     });
@@ -58,6 +75,12 @@ describe("backup service", () => {
     const result = inspectBackupArchive(archive);
 
     expect(result.manifest.schemaVersion).toBe(1);
+    expect(result.prompts[0]).toMatchObject({
+      schemaVersion: 2,
+      selectedTechniqueIds: [],
+      outputLanguage: "en",
+      promptState: "manual",
+    });
     expect(result.favorites).toEqual([]);
     expect(result.cloudMetadata).toEqual([]);
   });

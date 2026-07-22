@@ -1,13 +1,30 @@
 import type {
   AppSettings,
+  AiPromptMetadata,
   MediaRecord,
+  OutputLanguage,
   PlatformPresetId,
+  PromptComposition,
   PromptInput,
   PromptMode,
+  PromptState,
   SavedPrompt,
   Technique,
   TechniqueCategory,
 } from "../types";
+
+export interface CloudPromptMetadataV2 {
+  schemaVersion: 2;
+  selectedTechniqueIds: string[];
+  structuredDraft: PromptComposition;
+  outputLanguage: OutputLanguage;
+  promptState: Exclude<PromptState, "ai-preview">;
+  aiMetadata: AiPromptMetadata | null;
+}
+
+export type CloudPromptInput = PromptInput & {
+  _framecraftV2?: CloudPromptMetadataV2;
+};
 
 export interface CloudTechniqueRow {
   id: string;
@@ -62,7 +79,7 @@ export interface CloudSavedPromptRow {
   name: string;
   mode: PromptMode;
   platform: PlatformPresetId;
-  input: PromptInput;
+  input: CloudPromptInput;
   generated_prompt: string;
   edited_prompt: string;
   version: number;

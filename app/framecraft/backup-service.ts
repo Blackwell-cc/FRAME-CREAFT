@@ -1,5 +1,6 @@
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import type { AppSettings, LocalFavoriteRecord, MediaRecord, SavedPrompt, SyncMetadataRecord, Technique } from "./types";
+import { upgradeSavedPrompt } from "./saved-prompt-schema";
 
 interface BackupSource {
   techniques: Technique[];
@@ -102,17 +103,17 @@ export function inspectBackupArchive(bytes: Uint8Array): InspectedBackup {
     if (manifest.schemaVersion === 2 && (!files["favorites.json"] || !files["cloud-metadata.json"])) throw new Error("missing v2 file");
 
     const techniques = JSON.parse(strFromU8(files["techniques.json"])) as Technique[];
-    const prompts = JSON.parse(strFromU8(files["prompts.json"])) as SavedPrompt[];
+    const rawPrompts = JSON.parse(strFromU8(files["prompts.json"])) as SavedPrompt[];
     const settings = JSON.parse(strFromU8(files["settings.json"])) as AppSettings | null;
     const mediaMetadata = JSON.parse(strFromU8(files["media.json"])) as MediaMetadata[];
     const favorites = files["favorites.json"] ? JSON.parse(strFromU8(files["favorites.json"])) as LocalFavoriteRecord[] : [];
     const cloudMetadata = files["cloud-metadata.json"] ? JSON.parse(strFromU8(files["cloud-metadata.json"])) as SyncMetadataRecord[] : [];
 
-    if (!Array.isArray(techniques) || !Array.isArray(prompts) || !Array.isArray(mediaMetadata) || !Array.isArray(favorites) || !Array.isArray(cloudMetadata)) throw new Error("invalid array");
-    if (manifest.counts.techniques !== techniques.length || manifest.counts.prompts !== prompts.length || manifest.counts.media !== mediaMetadata.length) throw new Error("count mismatch");
+    if (!Array.isArray(techniques) || !Array.isArray(rawPrompts) || !Array.isArray(mediaMetadata) || !Array.isArray(favorites) || !Array.isArray(cloudMetadata)) throw new Error("invalid array");
+    if (manifest.counts.techniques !== techniques.length || manifest.counts.prompts !== rawPrompts.length || manifest.counts.media !== mediaMetadata.length) throw new Error("count mismatch");
     if (manifest.schemaVersion === 2 && (manifest.counts.favorites !== favorites.length || manifest.counts.cloudMetadata !== cloudMetadata.length)) throw new Error("v2 count mismatch");
 
-    if (techniques.some((item) => !isSafeId(item.id) || !hasSafeReferenceUrl(item)) || prompts.some((item) => !isSafeId(item.id)) || mediaMetadata.some((item) => !isSafeId(item.id) || !isSafeId(item.techniqueId) || item.file !== `media/${item.id}.${extensionFor(item.mimeType)}`) || favorites.some((item) => !isSafeId(item.id) || !isSafeId(item.userId) || !isSafeId(item.entityId))) throw new Error("unsafe record");
+    if (techniques.some((item) => !isSafeId(item.id) || !hasSafeReferenceUrl(item)) || rawPrompts.some((item) => !isSafeId(item.id)) || mediaMetadata.some((item) => !isSafeId(item.id) || !isSafeId(item.techniqueId) || item.file !== `media/${item.id}.${extensionFor(item.mimeType)}`) || favorites.some((item) => !isSafeId(item.id) || !isSafeId(item.userId) || !isSafeId(item.entityId))) throw new Error("unsafe record");
 
     const allowedFiles = new Set([...required, ...(manifest.schemaVersion === 2 ? ["favorites.json", "cloud-metadata.json"] : []), ...mediaMetadata.map((item) => item.file)]);
     if (Object.keys(files).some((name) => !allowedFiles.has(name))) throw new Error("unexpected file");
@@ -122,6 +123,7 @@ export function inspectBackupArchive(bytes: Uint8Array): InspectedBackup {
       if (!fileBytes || checksum(fileBytes) !== manifest.mediaChecksums[file]) throw new Error("invalid media");
       return { ...record, blob: new Blob([fileBytes as BlobPart], { type: record.mimeType }) };
     });
+    const prompts = rawPrompts.map(upgradeSavedPrompt);
     return { manifest, techniques, prompts, settings, media, favorites, cloudMetadata };
   } catch {
     throw new Error("ไฟล์ Backup ไม่ถูกต้อง");

@@ -9,6 +9,7 @@ import type {
   SyncQueueRecord,
   Technique,
 } from "./types";
+import { upgradeSavedPrompt } from "./saved-prompt-schema";
 
 interface MetaRecord {
   key: string;
@@ -109,11 +110,13 @@ export function createTechniqueRepository(db: FrameCraftDb) {
 
 export function createPromptRepository(db: FrameCraftDb) {
   return {
-    list() {
-      return db.prompts.orderBy("updatedAt").reverse().toArray();
+    async list() {
+      const records = await db.prompts.orderBy("updatedAt").reverse().toArray();
+      return records.map(upgradeSavedPrompt);
     },
-    getById(id: string) {
-      return db.prompts.get(id);
+    async getById(id: string) {
+      const record = await db.prompts.get(id);
+      return record ? upgradeSavedPrompt(record) : undefined;
     },
     async save(record: SavedPrompt) {
       await db.prompts.put(record);

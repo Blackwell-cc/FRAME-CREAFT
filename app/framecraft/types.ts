@@ -90,7 +90,12 @@ export interface ComposePromptRequest {
   outputLanguage: OutputLanguage;
 }
 
-export interface SavedPrompt {
+export interface AiPromptMetadata {
+  model: string;
+  optimizedAt: string;
+}
+
+interface SavedPromptBase {
   id: string;
   name: string;
   mode: PromptMode;
@@ -102,6 +107,21 @@ export interface SavedPrompt {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface SavedPromptV1 extends SavedPromptBase {
+  schemaVersion?: 1;
+}
+
+export interface SavedPromptV2 extends SavedPromptBase {
+  schemaVersion: 2;
+  selectedTechniqueIds: string[];
+  structuredDraft: PromptComposition;
+  outputLanguage: OutputLanguage;
+  promptState: Exclude<PromptState, "ai-preview">;
+  aiMetadata?: AiPromptMetadata;
+}
+
+export type SavedPrompt = SavedPromptV1 | SavedPromptV2;
 
 export interface MediaRecord {
   id: string;

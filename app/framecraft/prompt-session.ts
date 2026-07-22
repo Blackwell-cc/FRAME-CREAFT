@@ -1,9 +1,4 @@
-import type { PromptState } from "./types";
-
-export interface AiPromptMetadata {
-  model: string;
-  optimizedAt: string;
-}
+import type { AiPromptMetadata, PromptState } from "./types";
 
 export interface PromptSession {
   state: PromptState;

@@ -28,7 +28,22 @@ describe("saved prompt repository", () => {
     await repository.save(prompt);
     await repository.update("prompt-1", { name: "Director portrait" });
 
-    expect(await repository.list()).toHaveLength(1);
-    expect((await repository.getById("prompt-1"))?.name).toBe("Director portrait");
+    const records = await repository.list();
+    const stored = await repository.getById("prompt-1");
+
+    expect(records).toHaveLength(1);
+    expect(stored).toMatchObject({
+      schemaVersion: 2,
+      name: "Director portrait",
+      selectedTechniqueIds: [],
+      outputLanguage: "en",
+      promptState: "auto",
+    });
+    expect(stored?.structuredDraft).toMatchObject({
+      prompt: prompt.generatedPrompt,
+      negativePrompt: "",
+      warnings: [],
+      shots: [],
+    });
   });
 });
