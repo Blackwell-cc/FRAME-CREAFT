@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { createAiOptimizer } from "../ai-optimizer";
 import { createBackupArchive } from "../backup-service";
 import { readImageDimensions } from "../media-service";
 import {
@@ -48,6 +49,7 @@ export function createAppCloudRuntime(env: Record<string, string | undefined>) {
   return {
     client,
     auth: createAuthRepository(client),
+    ai: createAiOptimizer(client),
     repositories,
     async loadPublic() {
       const [techniques, media, techniqueVersions, mediaVersions] = await Promise.all([
