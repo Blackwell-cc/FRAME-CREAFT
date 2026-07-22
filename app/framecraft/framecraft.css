@@ -137,3 +137,20 @@
 .migration-wizard__counts span{background:#0d0d0d;padding:12px}
 .migration-wizard button{min-height:44px;border:1px solid #eee;background:#efefec;color:#080808;padding:10px 16px;font:inherit;cursor:pointer}
 .migration-wizard__note,.migration-wizard__denied{color:#8c8c8c;font-size:.8rem}
+
+/* Prompt composer feedback and sequence */
+.prompt-warning{margin:10px 0 14px;border:1px solid #777;background:linear-gradient(135deg,#1a1a1a,#090909);color:#e6e6e2;padding:12px 14px;font-size:13px;line-height:1.55;box-shadow:inset 2px 0 #f2f2ee,0 10px 28px rgba(0,0,0,.28)}
+.output-language{grid-template-columns:1fr 1fr}
+.field-error,.prompt-completeness{margin:8px 0 12px;font-size:12px;line-height:1.55}
+.field-error{color:#f0f0ed;border-left:2px solid #f0f0ed;padding-left:10px}
+.prompt-completeness{color:#8f9296}
+.shot-breakdown{display:grid;gap:8px;margin:12px 0 18px}
+.shot-breakdown article{display:grid;grid-template-columns:72px 1fr;align-items:center;gap:10px;border:1px solid #373737;background:linear-gradient(135deg,#151618,#080809);padding:10px 12px;box-shadow:inset 0 1px rgba(255,255,255,.045)}
+.shot-breakdown small{color:#85898e;font:600 9px/1 var(--mono);letter-spacing:.1em}
+.shot-breakdown strong{font-size:13px;font-weight:600;color:#e3e4e1}
+.prompt-state{display:flex;justify-content:space-between;align-items:center;gap:10px;margin:10px 0 14px;border:1px solid #35373a;background:#0b0c0d;padding:10px 10px 10px 13px;font-size:12px;line-height:1.45}
+.prompt-state button{min-height:34px;border:1px solid #55585c;background:#151618;color:#d7d8d5;padding:0 10px;cursor:pointer;font-size:12px}
+.prompt-state--stale{color:#fff;border-left:2px solid #fff;padding-left:12px;box-shadow:inset 12px 0 24px rgba(255,255,255,.035)}
+.prompt-state--manual{color:#b8bbbf;border-left:2px solid #777b80;padding-left:12px}
+
+@media(max-width:760px){.output-language{grid-template-columns:1fr}.prompt-warning{font-size:14px}.prompt-state{align-items:stretch;flex-direction:column}.prompt-state button{width:100%}.shot-breakdown article{grid-template-columns:64px 1fr}}
