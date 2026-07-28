@@ -124,17 +124,18 @@ describe("FRAME / CRAFT application", () => {
     const user = userEvent.setup();
     render(<FrameCraftApp initialTechniques={starterTechniques} persistence="memory" />);
 
-    const card = screen.getByRole("article", { name: /^Extreme Wide Shot/ });
+    const card = screen.getByRole("article", { name: /^Wide Shot / });
     expect(card.querySelector("img")).not.toBeInTheDocument();
     expect(card.querySelector(".viewfinder-grid")).toBeInTheDocument();
-    expect(card.querySelector(".visual-code")).toHaveTextContent("EWS");
+    expect(card.querySelector(".visual-code")).toHaveTextContent("WS");
     expect(card.querySelector(".visual-index")).toBeInTheDocument();
 
-    await user.click(within(card).getByRole("button", { name: /^Extreme Wide Shot/ }));
+    await user.click(within(card).getByRole("button", { name: /^Wide Shot/ }));
 
     const dialog = screen.getByRole("dialog");
     expect(dialog.querySelector("img")).not.toBeInTheDocument();
     expect(dialog.querySelector(".viewfinder-grid")).toBeInTheDocument();
-    expect(dialog.querySelector(".detail-visual b")).toHaveTextContent("EWS");
+    expect(dialog.querySelector(".detail-visual b")).toHaveTextContent("WS");
   });
 });
+

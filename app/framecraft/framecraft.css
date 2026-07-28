@@ -176,3 +176,9 @@
 .ai-preview__actions button{min-height:46px}
 
 @media(max-width:760px){.output-language{grid-template-columns:1fr}.prompt-warning{font-size:14px}.prompt-state{align-items:stretch;flex-direction:column}.prompt-state button{width:100%}.shot-breakdown article{grid-template-columns:64px 1fr}.ai-preview{padding:20px}.ai-preview__grid{grid-template-columns:1fr}.ai-preview__shots li{grid-template-columns:68px 1fr}.ai-preview__shots small{grid-column:2}}
+
+.technique-visual[data-technique-id="shot-extreme-wide"] {
+  aspect-ratio: 3 / 4;
+  min-height: 0;
+}
+

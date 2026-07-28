@@ -16,9 +16,9 @@ export function TechniqueCard({ technique, language, imageUrl, onAdd, onFavorite
   const category = categoryLabels[technique.category];
   return (
     <article className="technique-card" aria-label={`${technique.titleEn} / ${technique.titleTh}`}>
-      <button className="technique-visual" data-category={technique.category} onClick={() => onOpen(technique)}>
+      <button className="technique-visual" data-category={technique.category} data-technique-id={technique.id} onClick={() => onOpen(technique)}>
         {imageUrl ? (
-          <img /* eslint-disable-line @next/next/no-img-element */ className={technique.id === "shot-close-up" ? "natural-color-reference" : undefined} src={imageUrl} alt="" />
+          <img /* eslint-disable-line @next/next/no-img-element */ className={technique.id === "shot-close-up" || technique.id === "shot-extreme-wide" ? "natural-color-reference" : undefined} src={imageUrl} alt="" />
         ) : (
           <>
             <span className="viewfinder-grid" aria-hidden="true" />
